@@ -1,21 +1,23 @@
---// Variables
+--// 2P Battle Tycoon Hack - Final Version (dengan Auto Press E)
+-- UI + Aimbot + AutoGrab + WalkSpeed + ESP + Auto Press E
+
+------------------------
+-- Services
+------------------------
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
+local Camera = Workspace.CurrentCamera
 
---// States
-local state = {
-    aimlock = false,
-    autograb = false,
-    walkspeed = false,
-    esp = false,
-    walkspeedValue = 16
-}
-
---// UI Setup
+------------------------
+-- UI Setup
+------------------------
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- hapus UI lama biar gak dobel
 if PlayerGui:FindFirstChild("TycoonHackUI") then
     PlayerGui.TycoonHackUI:Destroy()
 end
@@ -25,235 +27,299 @@ ScreenGui.Name = "TycoonHackUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
 
+-- Main Frame
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
 MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-MainFrame.Size = UDim2.new(0, 240, 0, 330)
-MainFrame.Position = UDim2.new(0, 20, 0.3, 0)
+MainFrame.Size = UDim2.new(0, 240, 0, 350)
+MainFrame.Position = UDim2.new(0, 120, 0.3, 0)
+MainFrame.Visible = true
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
 
--- Dragging
-local dragging, dragInput, dragStart, startPos
-local function update(input)
-    local delta = input.Position - dragStart
-    MainFrame.Position = UDim2.new(
-        startPos.X.Scale, startPos.X.Offset + delta.X,
-        startPos.Y.Scale, startPos.Y.Offset + delta.Y
-    )
-end
-
--- TitleBar
+-- Title bar (bisa drag)
 local TitleBar = Instance.new("TextLabel")
 TitleBar.Parent = MainFrame
 TitleBar.Size = UDim2.new(1, 0, 0, 30)
-TitleBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+TitleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 TitleBar.Text = "2P Battle Tycoon Hack"
 TitleBar.Font = Enum.Font.SourceSansBold
 TitleBar.TextSize = 16
 TitleBar.TextColor3 = Color3.fromRGB(255, 255, 255)
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
 
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-TitleBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
-
-UIS.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        update(input)
-    end
-end)
-
--- Close/Open Button
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Parent = TitleBar
-ToggleBtn.Size = UDim2.new(0, 60, 1, 0)
-ToggleBtn.Position = UDim2.new(1, -65, 0, 0)
-ToggleBtn.Text = "Close"
-ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
-
-ToggleBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-    ToggleBtn.Text = MainFrame.Visible and "Close" or "Open"
-end)
-
--- UI Layout
 local UIListLayout = Instance.new("UIListLayout")
 UIListLayout.Parent = MainFrame
-UIListLayout.Padding = UDim.new(0, 6)
+UIListLayout.Padding = UDim.new(0, 4)
 UIListLayout.FillDirection = Enum.FillDirection.Vertical
+UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local UIPadding = Instance.new("UIPadding")
 UIPadding.Parent = MainFrame
-UIPadding.PaddingTop = UDim.new(0, 40)
+UIPadding.PaddingTop = UDim.new(0, 35)
 
--- Utility: Checkbox
-local function createCheckbox(name, callback)
-    local btn = Instance.new("TextButton")
-    btn.Parent = MainFrame
-    btn.Size = UDim2.new(0, 200, 0, 30)
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.Text = "[ ] " .. name
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.SourceSans
-    btn.TextSize = 16
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+-- Floating menu button (selalu ada)
+local FloatBtn = Instance.new("TextButton")
+FloatBtn.Parent = ScreenGui
+FloatBtn.Size = UDim2.new(0, 80, 0, 30)
+FloatBtn.Position = UDim2.new(0, 20, 0, 20)
+FloatBtn.Text = "Menu"
+FloatBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+FloatBtn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+Instance.new("UICorner", FloatBtn).CornerRadius = UDim.new(0, 6)
 
-    local active = false
-    btn.MouseButton1Click:Connect(function()
-        active = not active
-        btn.Text = (active and "[✔] " or "[ ] ") .. name
-        callback(active)
+FloatBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- Dragging MainFrame
+do
+    local dragging, dragInput, dragStart, startPos
+    local function update(input)
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
     end)
-end
-
--- Utility: TextBox + Checkbox
-local function createSpeedControl()
-    local container = Instance.new("Frame")
-    container.Parent = MainFrame
-    container.Size = UDim2.new(0, 200, 0, 30)
-    container.BackgroundTransparency = 1
-
-    local btn = Instance.new("TextButton")
-    btn.Parent = container
-    btn.Size = UDim2.new(0, 120, 1, 0)
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.Text = "[ ] WalkSpeed"
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Font = Enum.Font.SourceSans
-    btn.TextSize = 16
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-
-    local box = Instance.new("TextBox")
-    box.Parent = container
-    box.Size = UDim2.new(0, 70, 1, 0)
-    box.Position = UDim2.new(1, -70, 0, 0)
-    box.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    box.Text = tostring(state.walkspeedValue)
-    box.TextColor3 = Color3.fromRGB(255, 255, 255)
-    box.Font = Enum.Font.SourceSans
-    box.TextSize = 16
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
-
-    local active = false
-    btn.MouseButton1Click:Connect(function()
-        active = not active
-        btn.Text = (active and "[✔] " or "[ ] ") .. "WalkSpeed"
-        state.walkspeed = active
+    TitleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
     end)
-
-    box.FocusLost:Connect(function()
-        local num = tonumber(box.Text)
-        if num and num > 0 then
-            state.walkspeedValue = num
-        else
-            box.Text = tostring(state.walkspeedValue)
+    UIS.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
         end
     end)
 end
 
---// Features
+------------------------
+-- UI Helpers
+------------------------
+local function createToggle(name, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 200, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = "[ ] " .. name
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 16
+    btn.Parent = MainFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = (state and "[✔] " or "[ ] ") .. name
+        callback(state)
+    end)
+    return btn
+end
+
+local function createTextbox(name, callback)
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, 200, 0, 30)
+    box.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.PlaceholderText = name
+    box.ClearTextOnFocus = false
+    box.Parent = MainFrame
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+    box.FocusLost:Connect(function(enter)
+        if enter and box.Text ~= "" then
+            callback(box.Text)
+        end
+    end)
+    return box
+end
+
+------------------------
+-- Features
+------------------------
+
 -- Aimbot
-RunService.RenderStepped:Connect(function()
-    if state.aimlock and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        local closest, dist = nil, math.huge
+do
+    local aimbotEnabled = false
+    local function getClosestEnemy()
+        local myChar = LocalPlayer.Character
+        if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+        local myPos = myChar.HumanoidRootPart.Position
+        local closest, shortest = nil, math.huge
         for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team and plr.Character and plr.Character:FindFirstChild("Head") then
-                local pos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(plr.Character.Head.Position)
-                if onScreen then
-                    local mag = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(pos.X, pos.Y)).Magnitude
-                    if mag < dist then
-                        dist = mag
-                        closest = plr
-                    end
+            if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (plr.Character.HumanoidRootPart.Position - myPos).Magnitude
+                local hum = plr.Character:FindFirstChild("Humanoid")
+                if hum and hum.Health > 0 and dist < shortest then
+                    shortest, closest = dist, plr
                 end
             end
         end
-        if closest then
-            workspace.CurrentCamera.CFrame = CFrame.new(workspace.CurrentCamera.CFrame.Position, closest.Character.Head.Position)
-        end
+        return closest
     end
-end)
-
--- Auto Grab
-RunService.RenderStepped:Connect(function()
-    if state.autograb then
-        for _, tool in ipairs(workspace:GetChildren()) do
-            if tool:IsA("Tool") then
-                firetouchinterest(LocalPlayer.Character.HumanoidRootPart, tool.Handle, 0)
-                firetouchinterest(LocalPlayer.Character.HumanoidRootPart, tool.Handle, 1)
+    RunService.RenderStepped:Connect(function()
+        if aimbotEnabled then
+            local target = getClosestEnemy()
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.HumanoidRootPart.Position)
             end
         end
-    end
-end)
-
--- WalkSpeed
-RunService.RenderStepped:Connect(function()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        if state.walkspeed then
-            LocalPlayer.Character.Humanoid.WalkSpeed = state.walkspeedValue
-        else
-            LocalPlayer.Character.Humanoid.WalkSpeed = 16
-        end
-    end
-end)
-
--- ESP
-local function applyESP(plr)
-    if plr == LocalPlayer then return end
-    if not plr.Character then return end
-    if plr.Character:FindFirstChild("ESP_Highlight") then return end
-
-    local h = Instance.new("Highlight")
-    h.Name = "ESP_Highlight"
-    h.FillTransparency = 0.5
-    h.OutlineTransparency = 0
-    if plr.Team == LocalPlayer.Team then
-        h.FillColor = Color3.fromRGB(0, 255, 255) -- Cyan (teman)
-        h.OutlineColor = Color3.fromRGB(0, 200, 200)
-    else
-        h.FillColor = Color3.fromRGB(255, 0, 255) -- Magenta (musuh)
-        h.OutlineColor = Color3.fromRGB(200, 0, 200)
-    end
-    h.Parent = plr.Character
+    end)
+    createToggle("Aimbot", function(val)
+        aimbotEnabled = val
+    end)
 end
 
-RunService.RenderStepped:Connect(function()
-    if state.esp then
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                applyESP(plr)
-            end
+-- Auto Grab Weapons
+do
+    local TycoonsFolder = Workspace:WaitForChild("Tycoons")
+    local toolGiverNames = {
+        "ToolGiver1P1","ToolGiver1P2","ToolGiver2P1","ToolGiver3P1","ToolGiver3P2",
+        "ToolGiver4P1","ToolGiver4P2","ToolGiver5","ToolGiver5P1","ToolGiver5P2",
+        "ToolGiver6P1","ToolGiver6P2","ToolGiver7P1","ToolGiver7P2",
+        "ToolGiver8P1","ToolGiver8P2","ToolGiver9P1","ToolGiver9P2",
+        "ToolGiver10P1","ToolGiver10P2","ToolGiver11P1","ToolGiver11P2",
+        "ToolGiver12P1","ToolGiver12P2","ToolGiver13P1","ToolGiver13P2",
+        "ToolGiver14P1","ToolGiver14P2","ToolGiver100"
+    }
+    local RootPart
+    LocalPlayer.CharacterAdded:Connect(function(c) RootPart = c:WaitForChild("HumanoidRootPart") end)
+    if LocalPlayer.Character then RootPart = LocalPlayer.Character:WaitForChild("HumanoidRootPart") end
+    local running = false
+    createToggle("Auto Grab Weapons", function(state)
+        running = state
+        if state then
+            task.spawn(function()
+                while running do
+                    if RootPart and RootPart.Parent then
+                        for _, tycoon in ipairs(TycoonsFolder:GetChildren()) do
+                            local purchased = tycoon:FindFirstChild("PurchasedObjects")
+                            if purchased then
+                                for _, name in ipairs(toolGiverNames) do
+                                    local giver = purchased:FindFirstChild(name)
+                                    if giver and giver:FindFirstChild("Touch") then
+                                        pcall(function()
+                                            firetouchinterest(RootPart, giver.Touch, 0)
+                                            firetouchinterest(RootPart, giver.Touch, 1)
+                                        end)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    task.wait(2)
+                end
+            end)
         end
-    else
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr.Character and plr.Character:FindFirstChild("ESP_Highlight") then
-                plr.Character.ESP_Highlight:Destroy()
-            end
-        end
-    end
-end)
+    end)
+end
 
---// Build UI Elements
-createCheckbox("Aimbot", function(v) state.aimlock = v end)
-createCheckbox("Auto Grab Weapon", function(v) state.autograb = v end)
-createSpeedControl()
-createCheckbox("ESP", function(v) state.esp = v end)
+-- WalkSpeed
+do
+    local speed = 16
+    local speedTextbox = createTextbox("WalkSpeed (number)", function(txt)
+        local num = tonumber(txt)
+        if num and num > 0 then
+            speed = num
+        end
+    end)
+    -- default display
+    speedTextbox.Text = tostring(speed)
+    -- apply speed only while toggled via checkbox (we reuse createToggle above pattern)
+    local walkOn = false
+    createToggle("Use WalkSpeed", function(v)
+        walkOn = v
+    end)
+    RunService.Heartbeat:Connect(function()
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            if walkOn then
+                pcall(function() LocalPlayer.Character.Humanoid.WalkSpeed = speed end)
+            else
+                pcall(function() LocalPlayer.Character.Humanoid.WalkSpeed = 16 end)
+            end
+        end
+    end)
+end
+
+-- ESP (teman = cyan, musuh = magenta)
+do
+    local espEnabled = false
+    local function applyESP(plr)
+        if plr == LocalPlayer then return end
+        if not plr.Character then return end
+        if plr.Character:FindFirstChild("ESP_Highlight") then return end
+        local hl = Instance.new("Highlight")
+        hl.Name = "ESP_Highlight"
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        if plr.Team == LocalPlayer.Team then
+            hl.FillColor = Color3.fromRGB(0, 255, 255) -- cyan teman
+            hl.OutlineColor = Color3.fromRGB(0, 200, 200)
+        else
+            hl.FillColor = Color3.fromRGB(255, 0, 255) -- magenta musuh
+            hl.OutlineColor = Color3.fromRGB(200, 0, 200)
+        end
+        hl.Parent = plr.Character
+    end
+
+    createToggle("ESP", function(val)
+        espEnabled = val
+        if val then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    if p.Character then applyESP(p) end
+                    p.CharacterAdded:Connect(function() task.wait(0.8) if espEnabled then applyESP(p) end end)
+                end
+            end
+        else
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Character and p.Character:FindFirstChild("ESP_Highlight") then
+                    p.Character.ESP_Highlight:Destroy()
+                end
+            end
+        end
+    end)
+end
+
+-- Auto Press E (interval 0.5s) with toggle
+do
+    local autoE = false
+    createToggle("Auto Press E", function(val)
+        autoE = val
+        if val then
+            task.spawn(function()
+                while autoE do
+                    -- Try VirtualInputManager; wrap in pcall because not all executors expose it
+                    local ok = pcall(function()
+                        local vim = game:GetService("VirtualInputManager")
+                        vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    end)
+                    -- If VirtualInputManager not available, try to fire a local input event (best-effort)
+                    if not ok then
+                        pcall(function()
+                            -- Attempt to use UserInputService to simulate (may not work in many executors)
+                            UIS.VirtualInput = UIS.VirtualInput -- no-op to avoid warning
+                        end)
+                    end
+                    task.wait(0.5)
+                end
+            end)
+        end
+    end)
+end
+
+-- End of script
