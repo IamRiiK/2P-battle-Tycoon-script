@@ -1,4 +1,4 @@
-local Library = loadstring(Game:HttpGet("https://raw.githubusercontent.com/IamRiiK/tes-project/refs/heads/main/Wizard"))()
+local Library = loadstring(Game:HttpGet("https://raw.githubusercontent.com/IamRiiK/RiiK-2P-battle-Tycoon/refs/heads/main/Wizard"))()
 local PhantomForcesWindow = Library:NewWindow("2P Battle Tycoon")
 
 local SpeedSection = PhantomForcesWindow:NewSection("WalkSpeed")
