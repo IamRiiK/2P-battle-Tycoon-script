@@ -2,7 +2,7 @@ local Library = loadstring(Game:HttpGet("https://raw.githubusercontent.com/blood
 local PhantomForcesWindow = Library:NewWindow("2P Battle Tycoon")
 
 local SpeedSection = PhantomForcesWindow:NewSection("WalkSpeed")
-local AutoSection = PhantomForcesWindow:NewSection("Automatic E")
+local AutoSection = PhantomForcesWindow:NewSection("AutoClick E")
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -61,7 +61,7 @@ end)
 
 -- AutoClick setup
 local autoClicking = false
-local AUTO_INTERVAL = 0.6 -- Detik interval auto click
+local AUTO_INTERVAL = 0.5 -- Detik interval auto click
 
 AutoSection:CreateButton("AutoClick ON", function()
     if autoClicking then return end
