@@ -61,7 +61,7 @@ end)
 
 -- AutoClick setup
 local autoClicking = false
-local AUTO_INTERVAL = 0.5 -- Detik interval auto click
+local AUTO_INTERVAL = 0.6 -- Detik interval auto click
 
 AutoSection:CreateButton("AutoClick ON", function()
     if autoClicking then return end
