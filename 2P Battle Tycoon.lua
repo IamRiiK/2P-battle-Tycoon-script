@@ -5,6 +5,8 @@ local PhantomForcesWindow = Library:NewWindow("2P Battle Tycoon")
 -- Sections
 local SpeedSection = PhantomForcesWindow:NewSection("WalkSpeed")
 local AutoSection = PhantomForcesWindow:NewSection("AutoClick E")
+local JumpSection = PhantomForcesWindow:NewSection("Unlimited Jump")
+local DebugSection = PhantomForcesWindow:NewSection("Debug Tools")
 
 -- Services
 local Players = game:GetService("Players")
@@ -12,7 +14,9 @@ local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 
--- Speed setup
+-------------------------------------------------------
+-- WalkSpeed Setup
+-------------------------------------------------------
 local tspeed = 0
 local minSpeed = 0
 local maxSpeed = 100
@@ -65,7 +69,9 @@ LocalPlayer.CharacterAdded:Connect(function()
     setupCharacter()
 end)
 
--- AutoClick setup (ON / OFF)
+-------------------------------------------------------
+-- AutoClick E Setup
+-------------------------------------------------------
 local autoClicking = false
 local AUTO_INTERVAL = 0.5 -- detik interval auto click
 
@@ -95,16 +101,39 @@ AutoSection:CreateButton("AutoClick OFF", function()
     print("[AutoClick] OFF (user menekan tombol)")
 end)
 
+-------------------------------------------------------
+-- Unlimited Jump Setup
+-------------------------------------------------------
+local unlimitedJump = false
 
--- Unlimited Energy Section
-local EnergySection = PhantomForcesWindow:NewSection("Unlimited Energy")
+local function setupUnlimitedJump()
+    spawn(function()
+        while unlimitedJump do
+            RunService.Heartbeat:Wait()
+            local chr = LocalPlayer.Character
+            local hum = chr and chr:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.Jump = true -- paksa selalu bisa lompat
+            end
+        end
+    end)
+end
 
-local unlimitedEnergy = false
-local staminaTarget = nil
+JumpSection:CreateButton("Unlimited Jump ON", function()
+    if unlimitedJump then return end
+    unlimitedJump = true
+    setupUnlimitedJump()
+    print("[Unlimited Jump] ON")
+end)
 
--- Debug Section untuk cek semua NumberValue / IntValue
-local DebugSection = PhantomForcesWindow:NewSection("Debug Tools")
+JumpSection:CreateButton("Unlimited Jump OFF", function()
+    unlimitedJump = false
+    print("[Unlimited Jump] OFF")
+end)
 
+-------------------------------------------------------
+-- Debug Tools
+-------------------------------------------------------
 DebugSection:CreateButton("Print All Values", function()
     local chr = LocalPlayer.Character
     print("=== [DEBUG] Checking values in Character & LocalPlayer ===")
@@ -113,7 +142,7 @@ DebugSection:CreateButton("Print All Values", function()
     if chr then
         for _, inst in ipairs(chr:GetDescendants()) do
             if inst:IsA("NumberValue") or inst:IsA("IntValue") then
-                print("Character ->", inst.Name, "=", inst.Value)
+                print("Character ->", inst:GetFullName(), "=", inst.Value)
             end
         end
     else
@@ -123,63 +152,9 @@ DebugSection:CreateButton("Print All Values", function()
     -- cek di LocalPlayer
     for _, inst in ipairs(LocalPlayer:GetDescendants()) do
         if inst:IsA("NumberValue") or inst:IsA("IntValue") then
-            print("LocalPlayer ->", inst.Name, "=", inst.Value)
+            print("LocalPlayer ->", inst:GetFullName(), "=", inst.Value)
         end
     end
 
     print("=== [DEBUG] Selesai ===")
-end)
-
-
--- daftar kemungkinan nama stamina
-local staminaNames = {"Stamina", "Energy", "JumpStamina", "Fatigue"}
-
--- fungsi untuk mencari stamina value
-local function findStamina()
-    local chr = LocalPlayer.Character
-    if not chr then return nil end
-
-    for _,name in ipairs(staminaNames) do
-        local val = chr:FindFirstChild(name) or LocalPlayer:FindFirstChild(name)
-        if val and val.Value then
-            return val
-        end
-    end
-    return nil
-end
-
--- loop menjaga stamina tetap penuh
-local function keepStaminaFull()
-    spawn(function()
-        while unlimitedEnergy do
-            RunService.Heartbeat:Wait()
-            if staminaTarget and staminaTarget.Parent then
-                local maxVal = staminaTarget.MaxValue or staminaTarget.Value
-                if staminaTarget.Value < maxVal then
-                    staminaTarget.Value = maxVal
-                end
-            end
-        end
-    end)
-end
-
--- Tombol ON
-EnergySection:CreateButton("Unlimited Energy ON", function()
-    if unlimitedEnergy then return end
-
-    staminaTarget = findStamina()
-    if staminaTarget then
-        unlimitedEnergy = true
-        keepStaminaFull()
-        print("[Unlimited Energy] ON → menjaga", staminaTarget.Name)
-    else
-        warn("[Unlimited Energy] Tidak menemukan Stamina/Energy di character!")
-    end
-end)
-
--- Tombol OFF
-EnergySection:CreateButton("Unlimited Energy OFF", function()
-    unlimitedEnergy = false
-    staminaTarget = nil
-    print("[Unlimited Energy] OFF")
 end)
