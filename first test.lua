@@ -1,8 +1,8 @@
 local Library = loadstring(Game:HttpGet("https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/wizard"))()
-local PhantomForcesWindow = Library:NewWindow("RiiK")
+local PhantomForcesWindow = Library:NewWindow("2P Battle Tycoon")
 
-local SpeedSection = PhantomForcesWindow:NewSection("Speed")
-local AutoSection = PhantomForcesWindow:NewSection("Automatic")
+local SpeedSection = PhantomForcesWindow:NewSection("WalkSpeed")
+local AutoSection = PhantomForcesWindow:NewSection("Automatic E")
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
