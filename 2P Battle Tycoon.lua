@@ -5,7 +5,6 @@ local PhantomForcesWindow = Library:NewWindow("2P Battle Tycoon")
 -- Sections
 local SpeedSection = PhantomForcesWindow:NewSection("WalkSpeed")
 local AutoSection = PhantomForcesWindow:NewSection("AutoClick E")
-local DebugSection = PhantomForcesWindow:NewSection("Debug Tools")
 
 -- Services
 local Players = game:GetService("Players")
@@ -13,7 +12,9 @@ local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 
--- Speed setup
+-------------------------------------------------------
+-- WalkSpeed Setup
+-------------------------------------------------------
 local tspeed = 0
 local minSpeed = 0
 local maxSpeed = 100
@@ -66,7 +67,9 @@ LocalPlayer.CharacterAdded:Connect(function()
     setupCharacter()
 end)
 
--- AutoClick setup (ON / OFF)
+-------------------------------------------------------
+-- AutoClick E Setup
+-------------------------------------------------------
 local autoClicking = false
 local AUTO_INTERVAL = 0.5 -- detik interval auto click
 
@@ -94,51 +97,4 @@ end)
 AutoSection:CreateButton("AutoClick OFF", function()
     autoClicking = false
     print("[AutoClick] OFF (user menekan tombol)")
-end)
-
--- ===========================
--- 🔍 Debug Tools Gabungan
--- ===========================
-
-DebugSection:CreateButton("Print All Values & Attributes", function()
-    local chr = LocalPlayer.Character
-    print("=== [DEBUG] Checking Character & LocalPlayer ===")
-
-    -- cek di Character
-    if chr then
-        for _, inst in ipairs(chr:GetDescendants()) do
-            if inst:IsA("NumberValue") or inst:IsA("IntValue") then
-                print("Character Value ->", inst.Name, "=", inst.Value)
-            end
-        end
-
-        print("=== Character Attributes ===")
-        for name, val in pairs(chr:GetAttributes()) do
-            print("Character Attribute ->", name, "=", val)
-        end
-
-        if chr:FindFirstChild("Humanoid") then
-            print("=== Humanoid Attributes ===")
-            for name, val in pairs(chr.Humanoid:GetAttributes()) do
-                print("Humanoid Attribute ->", name, "=", val)
-            end
-        end
-    else
-        print("Character tidak ditemukan!")
-    end
-
-    -- cek di LocalPlayer
-    print("=== LocalPlayer Values ===")
-    for _, inst in ipairs(LocalPlayer:GetDescendants()) do
-        if inst:IsA("NumberValue") or inst:IsA("IntValue") then
-            print("LocalPlayer Value ->", inst.Name, "=", inst.Value)
-        end
-    end
-
-    print("=== LocalPlayer Attributes ===")
-    for name, val in pairs(LocalPlayer:GetAttributes()) do
-        print("LocalPlayer Attribute ->", name, "=", val)
-    end
-
-    print("=== [DEBUG] Selesai ===")
 end)
