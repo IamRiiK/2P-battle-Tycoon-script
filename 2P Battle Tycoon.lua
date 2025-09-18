@@ -4,256 +4,229 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
-local Camera = Workspace.CurrentCamera
 
--- Library UI (Simple Drag + Minimize)
-local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
-ScreenGui.Name = "RiiKHub"
+----------------------------------------------------------------
+-- UI CREATION (Simple Drag + Minimize + Light Theme)
+----------------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+ScreenGui.Name = "CustomUI"
+ScreenGui.ResetOnSpawn = false
 
 local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 260, 0, 340)
-MainFrame.Position = UDim2.new(0.3, 0, 0.2, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.Size = UDim2.new(0, 260, 0, 320)
+MainFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(245, 245, 245) -- terang
+MainFrame.BorderSizePixel = 2
 MainFrame.Active = true
 MainFrame.Draggable = true
 
-local TitleBar = Instance.new("TextButton", MainFrame)
-TitleBar.Size = UDim2.new(1, 0, 0, 28)
-TitleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-TitleBar.Text = " RiiK Hub - Toggle UI"
+local TitleBar = Instance.new("TextLabel", MainFrame)
+TitleBar.Size = UDim2.new(1, -30, 0, 30)
+TitleBar.Position = UDim2.new(0, 0, 0, 0)
+TitleBar.BackgroundColor3 = Color3.fromRGB(220, 220, 220)
+TitleBar.Text = "Utility Hub"
+TitleBar.TextColor3 = Color3.fromRGB(0, 0, 0)
+TitleBar.TextSize = 18
+TitleBar.Font = Enum.Font.SourceSansBold
 
-local Content = Instance.new("Frame", MainFrame)
-Content.Size = UDim2.new(1, 0, 1, -48)
-Content.Position = UDim2.new(0, 0, 0, 28)
-Content.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+local MinimizeBtn = Instance.new("TextButton", MainFrame)
+MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -30, 0, 0)
+MinimizeBtn.Text = "-"
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+MinimizeBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
 
-local UIListLayout = Instance.new("UIListLayout", Content)
-UIListLayout.Padding = UDim.new(0, 6)
-UIListLayout.FillDirection = Enum.FillDirection.Vertical
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local ContentFrame = Instance.new("Frame", MainFrame)
+ContentFrame.Size = UDim2.new(1, -10, 1, -40)
+ContentFrame.Position = UDim2.new(0, 5, 0, 35)
+ContentFrame.BackgroundTransparency = 1
 
--- Aimbot status indicator
-local AimbotStatus = Instance.new("TextLabel", MainFrame)
-AimbotStatus.Size = UDim2.new(1, 0, 0, 20)
-AimbotStatus.Position = UDim2.new(0, 0, 1, -20)
-AimbotStatus.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-AimbotStatus.Text = "Aimbot: OFF"
-AimbotStatus.TextColor3 = Color3.fromRGB(200, 50, 50)
-AimbotStatus.TextScaled = true
-AimbotStatus.Font = Enum.Font.SourceSansBold
+local UIList = Instance.new("UIListLayout", ContentFrame)
+UIList.Padding = UDim.new(0, 5)
 
-local function updateAimbotStatus(state)
-    if state then
-        AimbotStatus.Text = "Aimbot: ON"
-        AimbotStatus.TextColor3 = Color3.fromRGB(50, 200, 50)
-    else
-        AimbotStatus.Text = "Aimbot: OFF"
-        AimbotStatus.TextColor3 = Color3.fromRGB(200, 50, 50)
-    end
-end
-
--- Minimize/maximize logic
-local minimized = false
-TitleBar.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    Content.Visible = not minimized
-    MainFrame.Size = minimized and UDim2.new(0,260,0,48) or UDim2.new(0,260,0,340)
-end)
-
--------------------------------------------------
--- UI helper
--------------------------------------------------
 local function createToggle(name, callback)
-    local btn = Instance.new("TextButton", Content)
-    btn.Size = UDim2.new(1, -10, 0, 28)
-    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    btn.Text = name .. " [OFF]"
-    btn.MouseButton1Click:Connect(function()
-        local state = btn.Text:find("OFF") ~= nil
-        if state then
-            btn.Text = name .. " [ON]"
-            callback(true)
-        else
-            btn.Text = name .. " [OFF]"
-            callback(false)
-        end
+    local button = Instance.new("TextButton", ContentFrame)
+    button.Size = UDim2.new(1, 0, 0, 30)
+    button.Text = "[ ] " .. name
+    button.TextColor3 = Color3.fromRGB(0, 0, 0)
+    button.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+
+    local state = false
+    button.MouseButton1Click:Connect(function()
+        state = not state
+        button.Text = (state and "[X] " or "[ ] ") .. name
+        callback(state)
     end)
 end
 
 local function createTextbox(name, callback)
-    local box = Instance.new("TextBox", Content)
-    box.Size = UDim2.new(1, -10, 0, 28)
-    box.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    box.Text = name
+    local frame = Instance.new("Frame", ContentFrame)
+    frame.Size = UDim2.new(1, 0, 0, 30)
+    frame.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(0, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 16
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.5, 0, 1, 0)
+    box.Position = UDim2.new(0.5, 0, 0, 0)
+    box.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    box.TextColor3 = Color3.fromRGB(0, 0, 0)
+    box.PlaceholderText = "Enter number"
+
     box.FocusLost:Connect(function()
         callback(box.Text)
     end)
 end
 
--------------------------------------------------
--- 1. ESP
--------------------------------------------------
+local minimized = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    ContentFrame.Visible = not minimized
+    MinimizeBtn.Text = minimized and "+" or "-"
+end)
+
+----------------------------------------------------------------
+-- ESP (Highlight badan player)
+----------------------------------------------------------------
 local espEnabled = false
-local friendColor = Color3.fromRGB(13,71,21)
-local enemyColor = Color3.fromRGB(76,75,22)
+local friendColor = Color3.fromRGB(13,71,21)  -- hijau gelap
+local enemyColor = Color3.fromRGB(76,75,22)  -- emas kecoklatan
 
-local function createESP(player)
-    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "ESPTag"
-        billboard.Size = UDim2.new(0, 100, 0, 30)
-        billboard.AlwaysOnTop = true
-        billboard.Adornee = player.Character.HumanoidRootPart
+local function applyESP(player)
+    if player == LocalPlayer then return end
+    local char = player.Character
+    if not char then return end
+    if char:FindFirstChild("ESP_HL") then char.ESP_HL:Destroy() end
 
-        local label = Instance.new("TextLabel", billboard)
-        label.Size = UDim2.new(1,0,1,0)
-        label.BackgroundTransparency = 1
-        label.Text = player.Name
-        label.TextScaled = true
-        label.Font = Enum.Font.SourceSansBold
+    local hl = Instance.new("Highlight")
+    hl.Name = "ESP_HL"
+    hl.Adornee = char
+    hl.FillTransparency = 0.5
+    hl.OutlineTransparency = 0
+    hl.Parent = char
 
-        if player.Team == LocalPlayer.Team then
-            label.TextColor3 = friendColor
-        else
-            label.TextColor3 = enemyColor
-        end
-
-        billboard.Parent = player.Character
-    end
-end
-
-local function removeESP(player)
-    if player.Character and player.Character:FindFirstChild("ESPTag") then
-        player.Character.ESPTag:Destroy()
-    end
-end
-
-local function toggleESP(state)
-    espEnabled = state
-    if espEnabled then
-        for _,plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                createESP(plr)
-            end
-        end
-        Players.PlayerAdded:Connect(function(plr)
-            plr.CharacterAdded:Connect(function()
-                if espEnabled then
-                    task.wait(1)
-                    createESP(plr)
-                end
-            end)
-        end)
+    if player.Team == LocalPlayer.Team then
+        hl.FillColor = friendColor
+        hl.OutlineColor = friendColor
     else
-        for _,plr in ipairs(Players:GetPlayers()) do
-            removeESP(plr)
+        hl.FillColor = enemyColor
+        hl.OutlineColor = enemyColor
+    end
+end
+
+local function refreshESP()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            if espEnabled then
+                applyESP(plr)
+            else
+                if plr.Character and plr.Character:FindFirstChild("ESP_HL") then
+                    plr.Character.ESP_HL:Destroy()
+                end
+            end
         end
     end
 end
 
--------------------------------------------------
--- 2. Auto Press E
--------------------------------------------------
-local autoPressE = false
-createToggle("Auto Press E", function(state)
-    autoPressE = state
-    if state then
-        task.spawn(function()
-            while autoPressE do
-                game:GetService("VirtualInputManager"):SendKeyEvent(true, "E", false, game)
-                game:GetService("VirtualInputManager"):SendKeyEvent(false, "E", false, game)
-                task.wait(0.5)
-            end
-        end)
+Players.PlayerAdded:Connect(function(plr)
+    plr.CharacterAdded:Connect(function()
+        if espEnabled then task.wait(1) applyESP(plr) end
+    end)
+end)
+
+----------------------------------------------------------------
+-- Auto Press E
+----------------------------------------------------------------
+local autoE = false
+task.spawn(function()
+    while true do
+        if autoE then
+            keypress(0x45) -- key E
+            task.wait(0.05)
+            keyrelease(0x45)
+            task.wait(0.5)
+        else
+            task.wait(0.2)
+        end
     end
 end)
 
--------------------------------------------------
--- 3. Auto Grab Weapon
--------------------------------------------------
+----------------------------------------------------------------
+-- Auto Grab Weapon
+----------------------------------------------------------------
+local grabbing = false
 local TycoonsFolder = Workspace:WaitForChild("Tycoons")
-local toolGiverNames = {"ToolGiver1P1","ToolGiver1P2","ToolGiver2P1","ToolGiver3P1","ToolGiver3P2",
-"ToolGiver4P1","ToolGiver4P2","ToolGiver5","ToolGiver5P1","ToolGiver5P2",
-"ToolGiver6P1","ToolGiver6P2","ToolGiver7P1","ToolGiver7P2","ToolGiver8P1",
-"ToolGiver8P2","ToolGiver9P1","ToolGiver9P2","ToolGiver10P1","ToolGiver10P2",
-"ToolGiver11P1","ToolGiver11P2","ToolGiver12P1","ToolGiver12P2","ToolGiver13P1",
-"ToolGiver13P2","ToolGiver14P1","ToolGiver14P2","ToolGiver100"}
-local RootPart = nil
-local function updateCharacterRoot()
-    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    RootPart = character:WaitForChild("HumanoidRootPart")
-end
-updateCharacterRoot()
-LocalPlayer.CharacterAdded:Connect(updateCharacterRoot)
 
-local autoGrabRunning = false
-createToggle("Auto Grab Weapon", function(state)
-    autoGrabRunning = state
-    if state then
-        task.spawn(function()
-            while autoGrabRunning do
-                if RootPart then
-                    for _,tycoon in ipairs(TycoonsFolder:GetChildren()) do
-                        local purchased = tycoon:FindFirstChild("PurchasedObjects")
-                        if purchased then
-                            for _,name in ipairs(toolGiverNames) do
-                                local giver = purchased:FindFirstChild(name)
-                                if giver and giver:FindFirstChild("Touch") then
-                                    pcall(function()
-                                        firetouchinterest(giver.Touch, RootPart, 0)
-                                        firetouchinterest(giver.Touch, RootPart, 1)
-                                    end)
-                                end
-                            end
-                        end
-                    end
+local toolGiverNames = {"ToolGiver1P1","ToolGiver1P2","ToolGiver2P1"} -- potong contoh, tambahkan sesuai daftar
+
+local function grabWeapons()
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, tycoon in ipairs(TycoonsFolder:GetChildren()) do
+        local purchased = tycoon:FindFirstChild("PurchasedObjects")
+        if purchased then
+            for _, name in ipairs(toolGiverNames) do
+                local giver = purchased:FindFirstChild(name)
+                if giver and giver:FindFirstChild("Touch") then
+                    pcall(function()
+                        firetouchinterest(root, giver.Touch, 0)
+                        firetouchinterest(root, giver.Touch, 1)
+                    end)
                 end
-                task.wait(1)
             end
-        end)
+        end
     end
-end)
-
--------------------------------------------------
--- 4. Walkspeed Toggle + Input
--------------------------------------------------
-local walkspeedEnabled = false
-local customSpeed = 16
-
-createToggle("Toggle Walkspeed", function(state)
-    walkspeedEnabled = state
-end)
-
-createTextbox("Set Walkspeed", function(text)
-    local val = tonumber(text)
-    if val then customSpeed = val end
-end)
-
-RunService.Heartbeat:Connect(function()
-    if walkspeedEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.WalkSpeed = customSpeed
-    end
-end)
-
--------------------------------------------------
--- 5. Aimbot (smooth + F1 toggle + indicator)
--------------------------------------------------
-local aimbotEnabled = false
-local AIM_LERP = 0.3
-local AIM_THRESHOLD = math.rad(35)
-
-local function angleBetween(vec1, vec2)
-    return math.acos(math.clamp(vec1:Dot(vec2) / (vec1.Magnitude * vec2.Magnitude), -1, 1))
 end
+
+task.spawn(function()
+    while true do
+        if grabbing then grabWeapons() end
+        task.wait(1)
+    end
+end)
+
+----------------------------------------------------------------
+-- Walkspeed Control
+----------------------------------------------------------------
+local wsEnabled = false
+local wsValue = 16
+
+task.spawn(function()
+    while true do
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum and wsEnabled then
+            hum.WalkSpeed = wsValue
+        end
+        task.wait(0.1)
+    end
+end)
+
+----------------------------------------------------------------
+-- Aimbot (toggle + hotkey F1 + threshold + lerp smooth)
+----------------------------------------------------------------
+local aimbotEnabled = false
+local aimLerp = 0.15
+local aimFOV = 45 -- derajat threshold
+
+local Camera = Workspace.CurrentCamera
 
 local function getClosestEnemy()
     local myChar = LocalPlayer.Character
     if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = myChar.HumanoidRootPart.Position
+
     local closest, shortest = nil, math.huge
-    for _,plr in ipairs(Players:GetPlayers()) do
+    local myPos = myChar.HumanoidRootPart.Position
+
+    for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Team ~= LocalPlayer.Team and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-            local dist = (plr.Character.HumanoidRootPart.Position - myPos).Magnitude
+            local hrp = plr.Character.HumanoidRootPart
+            local dist = (hrp.Position - myPos).Magnitude
             local hum = plr.Character:FindFirstChild("Humanoid")
             if hum and hum.Health > 0 and dist < shortest then
                 shortest = dist
@@ -265,30 +238,56 @@ local function getClosestEnemy()
 end
 
 RunService.RenderStepped:Connect(function()
-    if aimbotEnabled then
-        local target = getClosestEnemy()
-        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-            local camCF = Camera.CFrame
-            local camDir = camCF.LookVector
-            local dirToTarget = (target.Character.HumanoidRootPart.Position - camCF.Position).Unit
-            local angle = angleBetween(camDir, dirToTarget)
-            if angle <= AIM_THRESHOLD then
-                local newCF = CFrame.new(camCF.Position, camCF.Position + camDir:Lerp(dirToTarget, AIM_LERP))
-                Camera.CFrame = newCF
-            end
+    if not aimbotEnabled then return end
+    local target = getClosestEnemy()
+    if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+        local targetPos = target.Character.HumanoidRootPart.Position
+        local camPos = Camera.CFrame.Position
+        local dir = (targetPos - camPos).Unit
+        local currentDir = Camera.CFrame.LookVector
+        local angle = math.deg(math.acos(math.clamp(currentDir:Dot(dir), -1, 1)))
+
+        if angle < aimFOV then
+            local newCFrame = CFrame.new(camPos, camPos + currentDir:Lerp(dir, aimLerp))
+            Camera.CFrame = newCFrame
         end
     end
 end)
 
 -- Hotkey F1
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.F1 then
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F1 then
         aimbotEnabled = not aimbotEnabled
-        updateAimbotStatus(aimbotEnabled)
+        warn("Aimbot:", aimbotEnabled)
     end
 end)
 
--------------------------------------------------
--- ESP Toggle button
--------------------------------------------------
-createToggle("ESP", toggleESP)
+----------------------------------------------------------------
+-- UI Buttons
+----------------------------------------------------------------
+createToggle("ESP", function(state)
+    espEnabled = state
+    refreshESP()
+end)
+
+createToggle("Auto Press E", function(state)
+    autoE = state
+end)
+
+createToggle("Auto Grab Weapon", function(state)
+    grabbing = state
+end)
+
+createToggle("Toggle Walkspeed", function(state)
+    wsEnabled = state
+end)
+
+createTextbox("Input Walkspeed", function(text)
+    local val = tonumber(text)
+    if val then wsValue = val end
+end)
+
+createToggle("Aimbot (F1 Hotkey)", function(state)
+    aimbotEnabled = state
+end)
