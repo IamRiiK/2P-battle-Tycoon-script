@@ -1,76 +1,74 @@
--- LocalScript: Speedhack + Auto "E" Click (Client-side only)
+local Library = loadstring(Game:HttpGet("https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/wizard"))()
+
+local PhantomForcesWindow = Library:NewWindow("RiiK")
+
+local KillingCheats = PhantomForcesWindow:NewSection("Speed")
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
 
-local player = Players.LocalPlayer
+local tspeed = 0
+local minSpeed = 0
+local maxSpeed = 100
+local hb = game:GetService("RunService").Heartbeat
+local tpwalking = true
+local player = game:GetService("Players")
+local lplr = player.LocalPlayer
+local hum
 
--- GUI references
-local frame = script.Parent
-local speedInput = frame:WaitForChild("SpeedInput")
-local applyBtn = frame:WaitForChild("ApplySpeedBtn")
-local autoToggleBtn = frame:WaitForChild("AutoClickToggleBtn")
-
--- Config
-local MIN_SPEED = 1
-local MAX_SPEED = 50
-local DEFAULT_SPEED = 16
-local AUTO_INTERVAL = 0.6 -- 600ms
-
--- State
-local autoClicking = false
-local autoCoroutine = nil
-
--- Helper: sanitize numeric input
-local function sanitizeSpeed(txt)
-    local digits = txt:gsub("%D", "")
-    if digits == "" then return DEFAULT_SPEED end
-    local num = tonumber(digits) or DEFAULT_SPEED
-    if num < MIN_SPEED then num = MIN_SPEED end
-    if num > MAX_SPEED then num = MAX_SPEED end
-    return num
+local function isNumber(str)
+    return tonumber(str) ~= nil or str == 'inf'
 end
 
--- Keep Humanoid updated when respawn
-local currentSpeed = DEFAULT_SPEED
-local function applySpeed(speed)
-    currentSpeed = speed
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.WalkSpeed = speed
+local function adjustSpeed(newSpeed)
+    if isNumber(newSpeed) then
+        local speedValue = tonumber(newSpeed)
+        if speedValue < minSpeed then
+            tspeed = minSpeed
+        elseif speedValue > maxSpeed then
+            tspeed = maxSpeed
+        else
+            tspeed = speedValue
         end
     end
 end
 
-player.CharacterAdded:Connect(function(char)
-    char:WaitForChild("Humanoid", 5)
-    applySpeed(currentSpeed)
-end)
+local function setupCharacter()
+    local chr = lplr.Character or lplr.CharacterAdded:Wait()
+    hum = chr:WaitForChild("Humanoid")
 
--- Input filter: hanya angka
-speedInput:GetPropertyChangedSignal("Text"):Connect(function()
-    local digits = speedInput.Text:gsub("%D", "")
-    if speedInput.Text ~= digits then
-        speedInput.Text = digits
-    end
-end)
+    -- Reemplazo de input field por KillingCheats:CreateTextbox
+    KillingCheats:CreateTextbox("Speed", function(text)
+        adjustSpeed(text)
+    end)
 
--- Apply speed
-applyBtn.MouseButton1Click:Connect(function()
-    local num = sanitizeSpeed(speedInput.Text)
-    applySpeed(num)
-    applyBtn.Text = "Applied: " .. tostring(num)
-    task.delay(0.8, function()
-        if applyBtn and applyBtn.Parent then
-            applyBtn.Text = "Apply Speed"
+    -- Bucle de movimiento
+    spawn(function() -- Usar spawn para permitir que el bucle funcione en paralelo
+        while tpwalking and hb:Wait() and chr and hum and hum.Parent do
+            if hum.MoveDirection.Magnitude > 0 then
+                local adjustedSpeed = tspeed * 0.2  -- Aumenta el multiplicador para velocidad mínima
+                chr:TranslateBy(hum.MoveDirection * adjustedSpeed)
+            end
         end
     end)
-end)
+end
 
--- Auto-click loop
+-- Configurar el personaje al iniciar
+setupCharacter()
+
+-- Conectar la función al evento CharacterAdded
+lplr.CharacterAdded:Connect(function()
+    -- Esperar que el nuevo personaje se configure antes de ejecutar
+    wait(0.5)  -- Espera un breve momento para asegurar que el personaje se cargue
+    setupCharacter()
+
+
+
+local KillingCheats = PhantomForcesWindow:NewSection("Automátic")
+KillingCheats:CreateButton("AutoClick", function(value)
+
 local function startAutoClick()
     if autoClicking then return end
     autoClicking = true
