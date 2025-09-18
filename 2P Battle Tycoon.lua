@@ -1,14 +1,18 @@
+-- Load Library
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/IamRiiK/RiiK-2P-battle-Tycoon/refs/heads/main/Wizard"))()
 local PhantomForcesWindow = Library:NewWindow("2P Battle Tycoon")
 
+-- Sections
 local SpeedSection = PhantomForcesWindow:NewSection("WalkSpeed")
 local AutoSection = PhantomForcesWindow:NewSection("AutoClick E")
 
+-- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 
+-- Speed setup
 local tspeed = 0
 local minSpeed = 0
 local maxSpeed = 100
@@ -54,39 +58,39 @@ local function setupCharacter()
     end)
 end
 
--- Setup untuk karakter pertama
+-- Setup karakter
 setupCharacter()
--- Setup ulang setiap respawn
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     setupCharacter()
 end)
 
--- AutoClick setup (toggle ON/OFF dengan indikator)
+-- AutoClick setup (ON / OFF)
 local autoClicking = false
 local AUTO_INTERVAL = 0.5 -- detik interval auto click
 
--- buat tombol, simpan referensinya biar bisa ubah teks
-local autoButton
-autoButton = AutoSection:CreateButton("AutoClick [OFF]", function()
-    autoClicking = not autoClicking
-    if autoClicking then
-        autoButton:SetText("AutoClick [ON]") -- update teks
-        -- mulai auto click
-        spawn(function()
-            while autoClicking do
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+AutoSection:CreateButton("AutoClick ON", function()
+    if autoClicking then return end
+    autoClicking = true
+    print("[AutoClick] ON")
 
-                local t0 = tick()
-                while tick() - t0 < AUTO_INTERVAL do
-                    if not autoClicking then break end
-                    RunService.Heartbeat:Wait()
-                end
+    spawn(function()
+        while autoClicking do
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+
+            local t0 = tick()
+            while tick() - t0 < AUTO_INTERVAL do
+                if not autoClicking then break end
+                RunService.Heartbeat:Wait()
             end
-        end)
-    else
-        autoButton:SetText("AutoClick [OFF]") -- update teks
-    end
+        end
+        print("[AutoClick] OFF (loop berhenti)")
+    end)
+end)
+
+AutoSection:CreateButton("AutoClick OFF", function()
+    autoClicking = false
+    print("[AutoClick] OFF (user menekan tombol)")
 end)
