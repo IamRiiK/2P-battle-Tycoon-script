@@ -1,4 +1,4 @@
---// 2P Battle Tycoon Script - Dark Modern UI + HUD (Toggle Sync)
+--// 2P Battle Tycoon Script - Dark Modern UI + HUD (Full Version)
 --// Features:
 -- 1) ESP (F1)
 -- 2) Auto Press E (F2)
@@ -120,9 +120,10 @@ local function addHUDLabel(name)
     HUDLabels[name] = lbl
 end
 
+-- Harus cocok dengan nama tombol toggle
 addHUDLabel("ESP")
-addHUDLabel("Auto E")
-addHUDLabel("WalkSpeed")
+addHUDLabel("Auto Press E")
+addHUDLabel("WalkSpeed Enabled")
 addHUDLabel("Aimbot")
 
 local function updateHUD(name,state)
@@ -301,7 +302,7 @@ registerToggle("WalkSpeed Enabled","WalkEnabled",function(val)
     if val then startWalk() end
 end)
 
--- WalkSpeed Input
+-- WalkSpeed Input (with placeholder)
 do
     local frame=Instance.new("Frame",Content)
     frame.Size=UDim2.new(1,0,0,34)
@@ -325,7 +326,25 @@ do
     box.Text = tostring(FEATURE.WalkValue)
     box.ClearTextOnFocus = false
 
+    -- Placeholder
+    local placeholder = Instance.new("TextLabel",box)
+    placeholder.Size = UDim2.new(1,-6,1,0)
+    placeholder.Position = UDim2.new(0,3,0,0)
+    placeholder.BackgroundTransparency = 1
+    placeholder.Text = "16–200 (rekomendasi 25–40)"
+    placeholder.Font = Enum.Font.SourceSansItalic
+    placeholder.TextSize = 13
+    placeholder.TextColor3 = Color3.fromRGB(150,150,150)
+    placeholder.TextXAlignment = Enum.TextXAlignment.Left
+
+    local function updatePlaceholder()
+        placeholder.Visible = (box.Text == "")
+    end
+
+    box:GetPropertyChangedSignal("Text"):Connect(updatePlaceholder)
+    box.Focused:Connect(updatePlaceholder)
     box.FocusLost:Connect(function(enter)
+        updatePlaceholder()
         if enter then
             local n=tonumber(box.Text)
             if n and n>=16 and n<=200 then
@@ -336,10 +355,12 @@ do
             end
         end
     end)
+
+    updatePlaceholder()
 end
 
 -- Aimbot
-registerToggle("Aimbot (F4 hotkey)","Aimbot",function(val) end)
+registerToggle("Aimbot","Aimbot",function(val) end)
 
 -- Hotkeys
 UIS.InputBegan:Connect(function(input,gp)
