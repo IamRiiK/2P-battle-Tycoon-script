@@ -309,23 +309,27 @@ local function createESP(p)
     hl.Name = "BoxESP"
     hl.Adornee = p.Character
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.OutlineTransparency = 0
-    hl.FillTransparency = 0.7
+    
+    -- Konfigurasi agar lebih kontras
+    hl.OutlineTransparency = 0 -- outline terlihat full
+    hl.OutlineColor = Color3.fromRGB(255,255,255) -- putih biar jelas
+    hl.FillTransparency = 0.25 -- lebih solid (default kamu 0.7 jadi buram)
 
     -- Warna berdasarkan tim
     if p.Team and LocalPlayer.Team then
         if p.Team == LocalPlayer.Team then
-            hl.FillColor = Color3.fromRGB(80,255,80)   -- Hijau (tim sama)
+            hl.FillColor = Color3.fromRGB(0,255,0)   -- hijau terang (ally)
         else
-            hl.FillColor = Color3.fromRGB(255,60,60)  -- Merah (musuh)
+            hl.FillColor = Color3.fromRGB(255,0,0)  -- merah terang (enemy)
         end
     else
-        hl.FillColor = Color3.fromRGB(255,220,50)     -- Kuning (neutral)
+        hl.FillColor = Color3.fromRGB(255,255,0)     -- kuning neon (neutral)
     end
 
     hl.Parent = p.Character
     espObjects[p] = {hl}
 end
+
 
 local function refreshESPForPlayer(p)
     if FEATURE.ESP then
