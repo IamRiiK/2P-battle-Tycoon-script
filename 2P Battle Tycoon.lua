@@ -269,7 +269,7 @@ do
     box.TextSize = 13
     box.ClearTextOnFocus = false
     box.Text = tostring(FEATURE.WalkValue)
-    box.PlaceholderText = "16–200 (rekomendasi 25–40)"
+    box.PlaceholderText = "16–200 (rec 25-40)"
     Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
 
     box.FocusLost:Connect(function(enter)
