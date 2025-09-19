@@ -1,5 +1,5 @@
 -- 2P Battle Tycoon — Full Fixed Script (Final)
--- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
+-- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
 -- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
 
 -- Ensure game loaded
@@ -20,7 +20,6 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 -- Safe camera reference (avoid infinite yield)
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
-    -- Wait up to 5 seconds for camera, otherwise proceed with nil and try again later
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
     Camera = ok and cam or Workspace.CurrentCamera
 end
@@ -44,7 +43,7 @@ local FEATURE = {
 }
 
 -- ==========
--- Helpers: safe parenting and utility
+-- Helpers
 -- ==========
 local function safeParentGui(gui)
     gui.ResetOnSpawn = false
@@ -70,7 +69,6 @@ end
 -- ==========
 -- Build UI
 -- ==========
--- Main ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "TPB_TycoonGUI_Final"
 ScreenGui.DisplayOrder = 9999
@@ -88,7 +86,6 @@ Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
 
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
-TitleBar.Position = UDim2.new(0,0,0,0)
 TitleBar.BackgroundColor3 = Color3.fromRGB(42,42,45)
 Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0,12)
 
@@ -146,7 +143,7 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
--- HUD GUI
+-- HUD
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
@@ -179,7 +176,6 @@ local function hudAdd(name)
     hudLabels[name] = l
 end
 
--- Must match display names used in registerToggle
 hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed Enabled")
@@ -192,7 +188,6 @@ local function updateHUD(name, state)
     end
 end
 
--- Toggle UI/HUD with LeftAlt
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
@@ -202,15 +197,14 @@ UIS.InputBegan:Connect(function(input, gp)
 end)
 
 -- ==========
--- Toggle helper & factory
+-- Toggle helper
 -- ==========
-local ToggleCallbacks = {} -- featureKey -> setter function
-local Buttons = {}         -- featureKey -> button instance
-local displayNameFor = {}  -- featureKey -> displayName (for HUD lookup)
+local ToggleCallbacks = {}
+local Buttons = {}
+local displayNameFor = {}
 
 local function registerToggle(displayName, featureKey, onChange)
     displayNameFor[featureKey] = displayName
-
     local btn = Instance.new("TextButton", Content)
     btn.Size = UDim2.new(1,0,0,36)
     btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
@@ -240,7 +234,6 @@ local function registerToggle(displayName, featureKey, onChange)
             TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = FEATURE[featureKey] and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)}):Play()
         end)
     end)
-
     btn.MouseButton1Click:Connect(function()
         setState(not FEATURE[featureKey])
     end)
@@ -251,7 +244,7 @@ local function registerToggle(displayName, featureKey, onChange)
 end
 
 -- ==========
--- WalkSpeed Input (with placeholder)
+-- WalkSpeed input
 -- ==========
 do
     local frame = Instance.new("Frame", Content)
@@ -309,62 +302,48 @@ do
 end
 
 -- ==========
--- ESP System (Highlights)
+-- ESP System (Fixed)
 -- ==========
-local espHighlights = {}   -- player -> Highlight instance
-local espCharConns = {}    -- player -> CharacterAdded connection
-local espTeamConns = {}    -- player -> Team change connection
+local espHighlights = {}
+local espConnections = {}
 
 local function setHighlightColorsFor(h, player)
     if not h or not player then return end
     if player.Team and LocalPlayer.Team then
         if player.Team == LocalPlayer.Team then
-            h.FillColor = Color3.fromRGB(24,205,24)   -- ally
+            h.FillColor = Color3.fromRGB(24,205,24)
             pcall(function() h.OutlineColor = Color3.fromRGB(10,80,30) end)
         else
-            h.FillColor = Color3.fromRGB(205,24,24)   -- enemy
+            h.FillColor = Color3.fromRGB(205,24,24)
             pcall(function() h.OutlineColor = Color3.fromRGB(120,10,10) end)
         end
     else
-        h.FillColor = Color3.fromRGB(150,150,150)     -- neutral
+        h.FillColor = Color3.fromRGB(150,150,150)
         pcall(function() h.OutlineColor = Color3.fromRGB(100,100,100) end)
     end
 end
 
-local function refreshESPColorForPlayer(player)
+local function clearHighlightForPlayer(player)
+    if not player then return end
     local h = espHighlights[player]
     if h then
-        pcall(function() setHighlightColorsFor(h, player) end)
-    end
-end
-
-local function refreshAllESPColors()
-    for player, _ in pairs(espHighlights) do
-        pcall(function() refreshESPColorForPlayer(player) end)
-    end
-end
-
-local function removeESPForPlayer(player)
-    if not player then return end
-    if espHighlights[player] then
-        pcall(function()
-            if espHighlights[player].Parent then espHighlights[player]:Destroy() end
-        end)
+        pcall(function() if h.Parent then h:Destroy() end end)
         espHighlights[player] = nil
     end
-    if espCharConns[player] then
-        pcall(function() espCharConns[player]:Disconnect() end)
-        espCharConns[player] = nil
-    end
-    if espTeamConns[player] then
-        pcall(function() espTeamConns[player]:Disconnect() end)
-        espTeamConns[player] = nil
-    end
+end
+
+local function disconnectPlayerConns(player)
+    local t = espConnections[player]
+    if not t then return end
+    pcall(function() if t.charAdded then t.charAdded:Disconnect() end end)
+    pcall(function() if t.charRemoving then t.charRemoving:Disconnect() end end)
+    pcall(function() if t.teamChange then t.teamChange:Disconnect() end end)
+    espConnections[player] = nil
 end
 
 local function applyESPToCharacter(player, character)
     if not player or player == LocalPlayer or not character then return end
-    removeESPForPlayer(player)
+    clearHighlightForPlayer(player)
     pcall(function()
         local h = Instance.new("Highlight")
         h.Adornee = character
@@ -372,52 +351,90 @@ local function applyESPToCharacter(player, character)
         h.FillTransparency = 0.35
         h.OutlineTransparency = 0
         setHighlightColorsFor(h, player)
-        h.Parent = character
+        h.Parent = game:GetService("CoreGui")
         espHighlights[player] = h
     end)
 end
 
-local function onPlayerTeamChanged(player)
-    pcall(function() refreshESPColorForPlayer(player) end)
+local function onPlayerCharacterAdded(player, char)
+    task.wait(0.06)
+    pcall(function()
+        if FEATURE.ESP then
+            applyESPToCharacter(player, char)
+        end
+    end)
 end
 
-local function applyESP(player)
-    if not player or player == LocalPlayer then return end
-    if player.Character then pcall(function() applyESPToCharacter(player, player.Character) end) end
-
-    if espCharConns[player] then pcall(function() espCharConns[player]:Disconnect() end) end
-    espCharConns[player] = player.CharacterAdded:Connect(function(char)
-        task.wait(0.08)
-        pcall(function() applyESPToCharacter(player, char) end)
-    end)
-
-    if espTeamConns[player] then pcall(function() espTeamConns[player]:Disconnect() end) end
-    espTeamConns[player] = player:GetPropertyChangedSignal("Team"):Connect(function()
-        pcall(function() onPlayerTeamChanged(player) end)
+local function onPlayerTeamChanged(player)
+    pcall(function()
+        local h = espHighlights[player]
+        if h then
+            setHighlightColorsFor(h, player)
+        end
     end)
 end
 
 local function enableESP()
+    disableESP()
     for _, p in ipairs(Players:GetPlayers()) do
-        pcall(function() applyESP(p) end)
+        if p ~= LocalPlayer then
+            if not espConnections[p] then
+                espConnections[p] = {}
+                espConnections[p].charAdded = p.CharacterAdded:Connect(function(ch) onPlayerCharacterAdded(p, ch) end)
+                espConnections[p].charRemoving = p.CharacterRemoving:Connect(function() clearHighlightForPlayer(p) end)
+                espConnections[p].teamChange = p:GetPropertyChangedSignal("Team"):Connect(function() onPlayerTeamChanged(p) end)
+            end
+            if p.Character and p.Character.Parent then
+                pcall(function() applyESPToCharacter(p, p.Character) end)
+            end
+        end
     end
-    Players.PlayerAdded:Connect(function(p) pcall(function() applyESP(p) end) end)
-    Players.PlayerRemoving:Connect(function(p) pcall(function() removeESPForPlayer(p) end) end)
+    espConnections._playerAddedConn = Players.PlayerAdded:Connect(function(p)
+        if p ~= LocalPlayer then
+            espConnections[p] = {}
+            espConnections[p].charAdded = p.CharacterAdded:Connect(function(ch) onPlayerCharacterAdded(p, ch) end)
+            espConnections[p].charRemoving = p.CharacterRemoving:Connect(function() clearHighlightForPlayer(p) end)
+            espConnections[p].teamChange = p:GetPropertyChangedSignal("Team"):Connect(function() onPlayerTeamChanged(p) end)
+            if p.Character and p.Character.Parent then
+                pcall(function() applyESPToCharacter(p, p.Character) end)
+            end
+        end
+    end)
+    espConnections._playerRemovingConn = Players.PlayerRemoving:Connect(function(p)
+        clearHighlightForPlayer(p)
+        disconnectPlayerConns(p)
+    end)
 end
 
-local function disableESP()
+function disableESP()
     for player, _ in pairs(espHighlights) do
-        pcall(function() removeESPForPlayer(player) end)
+        clearHighlightForPlayer(player)
     end
+    for player, _ in pairs(espConnections) do
+        if player ~= "_playerAddedConn" and player ~= "_playerRemovingConn" then
+            disconnectPlayerConns(player)
+        end
+    end
+    pcall(function() if espConnections._playerAddedConn then espConnections._playerAddedConn:Disconnect() end end)
+    pcall(function() if espConnections._playerRemovingConn then espConnections._playerRemovingConn:Disconnect() end end)
+    espConnections._playerAddedConn = nil
+    espConnections._playerRemovingConn = nil
 end
 
--- React to local player's team change -> recolor all highlights
 LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-    task.defer(function() pcall(function() refreshAllESPColors() end) end)
+    task.defer(function()
+        for _, h in pairs(espHighlights) do
+            local plr = nil
+            for p, hh in pairs(espHighlights) do
+                if hh == h then plr = p break end
+            end
+            if plr then setHighlightColorsFor(h, plr) end
+        end
+    end)
 end)
 
 -- ==========
--- Auto Press E (uses VIM if available)
+-- Auto Press E
 -- ==========
 local autoEThread = nil
 local function startAutoE()
@@ -439,171 +456,77 @@ end
 -- ==========
 -- Walk Speed
 -- ==========
-local walkThread = nil
-local function startWalk()
-    if walkThread then return end
-    walkThread = task.spawn(function()
-        while FEATURE.WalkEnabled do
-            local char = LocalPlayer.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum then pcall(function() hum.WalkSpeed = FEATURE.WalkValue end) end
-            task.wait(0.2)
-        end
-        walkThread = nil
-    end)
-end
-
--- Reapply walk and esp after respawn
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.12)
+RunService.Heartbeat:Connect(function()
     if FEATURE.WalkEnabled then
         pcall(function()
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = FEATURE.WalkValue end
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = FEATURE.WalkValue
+            end
         end)
-    end
-    if FEATURE.ESP then
-        for _, p in ipairs(Players:GetPlayers()) do pcall(function() applyESP(p) end) end
     end
 end)
 
 -- ==========
--- Aimbot (sniper-style)
+-- Aimbot
 -- ==========
-local function angleBetween(v1, v2)
-    if not v1 or not v2 then return math.pi end
-    local denom = (v1.Magnitude * v2.Magnitude)
-    if denom == 0 then return math.pi end
-    return math.acos(math.clamp(v1:Dot(v2) / denom, -1, 1))
-end
-
-local function getBestTargetByAngle()
-    safeWaitCamera()
-    local camCF = Camera and Camera.CFrame
-    if not camCF then return nil, nil, nil end
-    local camPos = camCF.Position
-    local camDir = camCF.LookVector
-    local best, bestPart, bestAng = nil, nil, math.huge
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                local cand = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
-                if cand then
-                    local dir = cand.Position - camPos
-                    if dir.Magnitude > 0 then
-                        local ang = angleBetween(camDir, dir.Unit)
-                        if ang < bestAng then
-                            bestAng = ang
-                            best = plr
-                            bestPart = cand
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return best, bestPart, bestAng
+local function angleTo(a, b)
+    local dot = a:Dot(b)
+    local mag = math.max((a.Magnitude*b.Magnitude),1e-6)
+    local val = math.clamp(dot/mag, -1,1)
+    return math.deg(math.acos(val))
 end
 
 RunService.RenderStepped:Connect(function()
-    if FEATURE.Aimbot then
-        local target, part, ang = getBestTargetByAngle()
-        if target and part and ang then
-            local fovRad = math.rad(FEATURE.AIM_FOV_DEG or 8)
-            if ang <= fovRad then
-                safeWaitCamera()
-                if Camera then
-                    local camCF = Camera.CFrame
-                    local dir = (part.Position - camCF.Position)
-                    if dir.Magnitude > 0 then
-                        local desired = CFrame.new(camCF.Position, camCF.Position + dir.Unit)
-                        local newCF = camCF:Lerp(desired, FEATURE.AIM_LERP or 0.4)
-                        pcall(function() Camera.CFrame = newCF end)
-                    end
-                end
+    if not FEATURE.Aimbot then return end
+    safeWaitCamera()
+    if not Camera then return end
+
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local best, bestAngle = nil, 1e9
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") then
+            local head = p.Character.Head
+            local dir = (head.Position - Camera.CFrame.Position).Unit
+            local ang = angleTo(Camera.CFrame.LookVector, dir)
+            if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
+                best, bestAngle = head, ang
             end
         end
+    end
+    if best then
+        local dir = (best.Position - Camera.CFrame.Position).Unit
+        local newLook = Camera.CFrame.LookVector:Lerp(dir, FEATURE.AIM_LERP)
+        local pos = Camera.CFrame.Position
+        Camera.CFrame = CFrame.new(pos, pos + newLook)
     end
 end)
 
 -- ==========
--- Register toggles & create buttons
+-- Register Toggles
 -- ==========
--- Register order + callbacks must be set before hotkeys usage
-local btnESP = registerToggle and registerToggle("ESP", "ESP", function(state)
+registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
 end)
-
--- If registerToggle wasn't available earlier (should be), define it now and recreate buttons
-if not btnESP then
-    -- re-declare registerToggle locally (this will seldom run because we declared earlier)
-    local function _registerToggle(displayName, featureKey, onChange)
-        registerToggle(displayName, featureKey, onChange)
-    end
-    _registerToggle("ESP", "ESP", function(state) if state then enableESP() else disableESP() end end)
-end
-
--- Create other toggles
-local btnAutoE = registerToggle("Auto Press E", "AutoE", function(state)
+registerToggle("Auto Press E", "AutoE", function(state)
     if state then startAutoE() end
 end)
-
-local btnWalk = registerToggle("WalkSpeed Enabled", "WalkEnabled", function(state)
-    if state then startWalk() end
-end)
-
-local btnAimbot = registerToggle("Aimbot", "Aimbot", function(state) end)
+registerToggle("Walk Enabled", "WalkEnabled")
+registerToggle("Aimbot", "Aimbot")
 
 -- ==========
--- Hotkeys: keep toggle & UI in sync
+-- Hotkeys
 -- ==========
-local HotkeyMap = {
-    [Enum.KeyCode.F1] = "ESP",
-    [Enum.KeyCode.F2] = "AutoE",
-    [Enum.KeyCode.F3] = "WalkEnabled",
-    [Enum.KeyCode.F4] = "Aimbot",
-}
-
-UIS.InputBegan:Connect(function(input, gp)
+UIS.InputBegan:Connect(function(input,gp)
     if gp then return end
-    local fk = HotkeyMap[input.KeyCode]
-    if fk and ToggleCallbacks[fk] then
-        pcall(function() ToggleCallbacks[fk](not FEATURE[fk]) end)
+    if input.KeyCode == Enum.KeyCode.F1 then
+        ToggleCallbacks.ESP(not FEATURE.ESP)
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+        ToggleCallbacks.AutoE(not FEATURE.AutoE)
+    elseif input.KeyCode == Enum.KeyCode.F3 then
+        ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
+    elseif input.KeyCode == Enum.KeyCode.F4 then
+        ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
     end
 end)
-
--- ==========
--- UI/HUD visual updater (keeps HUD text in sync)
--- ==========
-local function updateUIVisualsOnce()
-    for featureKey, setter in pairs(ToggleCallbacks) do
-        local display = displayNameFor[featureKey]
-        if display then
-            updateHUD(display, FEATURE[featureKey])
-            local btn = Buttons[featureKey]
-            if btn then
-                -- update text and color consistently (idempotent)
-                btn.Text = display .. " [" .. (FEATURE[featureKey] and "ON" or "OFF") .. "]"
-                btn.BackgroundColor3 = FEATURE[featureKey] and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-            end
-        end
-    end
-end
-
--- Run periodic visual sync (lightweight)
-task.spawn(function()
-    while true do
-        pcall(updateUIVisualsOnce)
-        task.wait(0.5)
-    end
-end)
-
--- Ensure initial HUD states
-updateHUD("ESP", FEATURE.ESP)
-updateHUD("Auto Press E", FEATURE.AutoE)
-updateHUD("WalkSpeed Enabled", FEATURE.WalkEnabled)
-updateHUD("Aimbot", FEATURE.Aimbot)
-
--- Final log
-print("[TPB_TycoonGUI_Final] fully loaded and fixed.")
