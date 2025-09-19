@@ -1,4 +1,4 @@
--- 2P Battle Tycoon — Full Fixed Script (Final v2)
+-- 2P Battle Tycoon — Full Fixed Script (Final v3)
 -- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
 -- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
 
@@ -17,14 +17,14 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Safe camera reference (avoid infinite yield)
+-- Safe camera reference
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
     Camera = ok and cam or Workspace.CurrentCamera
 end
 
--- Optional exploit API (pcall-protected)
+-- Optional exploit API
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
@@ -178,7 +178,7 @@ end
 
 hudAdd("ESP")
 hudAdd("Auto Press E")
-hudAdd("WalkSpeed Enabled")
+hudAdd("WalkSpeed")
 hudAdd("Aimbot")
 
 local function updateHUD(name, state)
@@ -268,26 +268,10 @@ do
     box.TextSize = 13
     box.ClearTextOnFocus = false
     box.Text = tostring(FEATURE.WalkValue)
+    box.PlaceholderText = "16–200 (rekomendasi 25–40)"
     Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
-    box.Parent = frame
 
-    local placeholder = Instance.new("TextLabel", box)
-    placeholder.Size = UDim2.new(1,-12,1,0)
-    placeholder.Position = UDim2.new(0,6,0,0)
-    placeholder.BackgroundTransparency = 1
-    placeholder.Font = Enum.Font.Gotham
-    placeholder.TextSize = 12
-    placeholder.TextColor3 = Color3.fromRGB(140,140,140)
-    placeholder.Text = "16–200 (rekomendasi 25–40)"
-    placeholder.TextXAlignment = Enum.TextXAlignment.Left
-
-    local function updatePlaceholder()
-        placeholder.Visible = (box.Text == "")
-    end
-    box:GetPropertyChangedSignal("Text"):Connect(updatePlaceholder)
-    box.Focused:Connect(updatePlaceholder)
     box.FocusLost:Connect(function(enter)
-        updatePlaceholder()
         if enter then
             local n = tonumber(box.Text)
             if n and n >= 16 and n <= 200 then
@@ -298,13 +282,70 @@ do
             end
         end
     end)
-    updatePlaceholder()
 end
 
 -- ==========
--- (ESP System sama persis dengan revisi sebelumnya)
+-- ESP System
 -- ==========
--- [ESP code disini tetap sama, tidak saya cut agar pesan tidak terlalu panjang]
+local espObjects = {}
+local function clearESP(p)
+    if espObjects[p] then
+        for _,v in pairs(espObjects[p]) do
+            v:Destroy()
+        end
+        espObjects[p] = nil
+    end
+end
+
+local function createESP(p)
+    clearESP(p)
+    if not p.Character then return end
+    local head = p.Character:FindFirstChild("Head")
+    if not head then return end
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "ESP_Billboard"
+    billboard.Size = UDim2.new(0,100,0,30)
+    billboard.AlwaysOnTop = true
+    billboard.Adornee = head
+
+    local text = Instance.new("TextLabel", billboard)
+    text.Size = UDim2.new(1,0,1,0)
+    text.BackgroundTransparency = 1
+    text.Font = Enum.Font.GothamBold
+    text.TextSize = 14
+    text.TextColor3 = Color3.fromRGB(255,60,60)
+    text.TextStrokeTransparency = 0.4
+    text.Text = p.Name
+
+    billboard.Parent = CoreGui or PlayerGui
+    espObjects[p] = {billboard}
+end
+
+local function refreshESP()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if FEATURE.ESP and p.Team and LocalPlayer.Team and p.Team ~= LocalPlayer.Team then
+                createESP(p)
+            else
+                clearESP(p)
+            end
+        end
+    end
+end
+
+local function enableESP()
+    refreshESP()
+    Players.PlayerAdded:Connect(refreshESP)
+    Players.PlayerRemoving:Connect(clearESP)
+    RunService.Heartbeat:Connect(refreshESP)
+end
+
+local function disableESP()
+    for p,_ in pairs(espObjects) do
+        clearESP(p)
+    end
+end
 
 -- ==========
 -- Auto Press E
@@ -359,7 +400,7 @@ RunService.RenderStepped:Connect(function()
 
     local best, bestAngle = nil, 1e9
     for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") then
+        if p ~= LocalPlayer and p.Team and LocalPlayer.Team and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") then
             local head = p.Character.Head
             local dir = (head.Position - Camera.CFrame.Position).Unit
             local ang = angleTo(Camera.CFrame.LookVector, dir)
@@ -385,10 +426,7 @@ end)
 registerToggle("Auto Press E", "AutoE", function(state)
     if state then startAutoE() end
 end)
--- ✅ FIX: HUD WalkSpeed update
-registerToggle("Walk Enabled", "WalkEnabled", function(state)
-    updateHUD("WalkSpeed Enabled", state)
-end)
+registerToggle("WalkSpeed", "WalkEnabled")
 registerToggle("Aimbot", "Aimbot")
 
 -- ==========
