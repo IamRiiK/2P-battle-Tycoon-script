@@ -1,8 +1,8 @@
--- 2P Battle Tycoon — Full Final Script (Detail Version)
--- Features: ESP (team auto-update), Auto Press E, WalkSpeed, Aimbot
--- Dark draggable UI + HUD (sync), hotkeys fix, placeholder walkspeed
--- Hotkeys: F1=ESP, F2=AutoE, F3=WalkSpeed, F4=Aimbot, LeftAlt=Hide UI
+-- 2P Battle Tycoon — Full Final Script (Complete)
+-- Dark UI + HUD (show when UI hidden) + ESP (team auto-update) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
+-- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
 
+-- Ensure game loaded
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 -- Services
@@ -16,11 +16,11 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = Workspace:WaitForChild("CurrentCamera")
 
--- VirtualInputManager (optional, protected)
+-- Optional: VirtualInputManager (exploit-specific)
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- Feature states
+-- Configuration / state
 local FEATURE = {
     ESP = false,
     AutoE = false,
@@ -32,26 +32,38 @@ local FEATURE = {
     AIM_LERP = 0.4,
 }
 
--- Cleanup old GUIs
-for _, name in ipairs({"TPB_TycoonGUI_Final", "TPB_TycoonHUD_Final"}) do
-    local exist = PlayerGui:FindFirstChild(name)
-    if exist then pcall(function() exist:Destroy() end) end
-    local coreExist = game:GetService("CoreGui"):FindFirstChild(name)
-    if coreExist then pcall(function() coreExist:Destroy() end) end
+-- Helper: safe parent for ScreenGui (PlayerGui preferred; fallback to CoreGui)
+local function safeParentGui(gui)
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = gui.DisplayOrder or 0
+    local ok, err = pcall(function() gui.Parent = PlayerGui end)
+    if not ok then
+        pcall(function() gui.Parent = game:GetService("CoreGui") end)
+    end
 end
 
--- =========================================
--- GUI CREATION
--- =========================================
+-- Cleanup old GUIs if present
+pcall(function()
+    local old = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
+    if old then old:Destroy() end
+end)
+pcall(function()
+    local oldHUD = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
+    if oldHUD then oldHUD:Destroy() end
+end)
 
--- Main UI
+-- =========================
+-- UI BUILD
+-- =========================
+
+-- Main ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "TPB_TycoonGUI_Final"
-ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 9999
-pcall(function() ScreenGui.Parent = game:GetService("CoreGui") end)
+safeParentGui(ScreenGui)
 
-local MainFrame = Instance.new("Frame", ScreenGui)
+-- Main window
+local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0,360,0,460)
 MainFrame.Position = UDim2.new(0.28,0,0.18,0)
@@ -59,11 +71,13 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
 
--- Title Bar
+-- Title bar
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
+TitleBar.Position = UDim2.new(0,0,0,0)
 TitleBar.BackgroundColor3 = Color3.fromRGB(42,42,45)
 Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0,12)
 
@@ -72,9 +86,9 @@ DragHandle.Size = UDim2.new(0,28,0,28)
 DragHandle.Position = UDim2.new(0,8,0,6)
 DragHandle.BackgroundTransparency = 1
 DragHandle.Font = Enum.Font.Gotham
-DragHandle.Text = "≡"
 DragHandle.TextSize = 20
 DragHandle.TextColor3 = Color3.fromRGB(200,200,200)
+DragHandle.Text = "≡"
 
 local Title = Instance.new("TextLabel", TitleBar)
 Title.Size = UDim2.new(0.6,0,1,0)
@@ -106,7 +120,7 @@ MinBtn.TextColor3 = Color3.fromRGB(240,240,240)
 MinBtn.Text = "-"
 Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,8)
 
--- Content frame
+-- Content area
 local Content = Instance.new("Frame", MainFrame)
 Content.Size = UDim2.new(1,-16,1,-56)
 Content.Position = UDim2.new(0,8,0,48)
@@ -115,7 +129,7 @@ Content.BackgroundTransparency = 1
 local UIList = Instance.new("UIListLayout", Content)
 UIList.Padding = UDim.new(0,12)
 
--- Minimize logic
+-- Minimize toggle
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
@@ -123,12 +137,13 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
--- HUD
+-- =========================
+-- HUD (bottom right) - shows when UI hidden
+-- =========================
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
-HUDGui.ResetOnSpawn = false
 HUDGui.DisplayOrder = 10000
-pcall(function() HUDGui.Parent = game:GetService("CoreGui") end)
+safeParentGui(HUDGui)
 
 local HUD = Instance.new("Frame", HUDGui)
 HUD.Size = UDim2.new(0,220,0,110)
@@ -143,7 +158,6 @@ local HUDList = Instance.new("UIListLayout", HUD)
 HUDList.Padding = UDim.new(0,4)
 HUDList.SortOrder = Enum.SortOrder.LayoutOrder
 
--- HUD label creation
 local hudLabels = {}
 local function hudAdd(name)
     local l = Instance.new("TextLabel", HUD)
@@ -158,7 +172,6 @@ local function hudAdd(name)
     hudLabels[name] = l
 end
 
--- HUD items (names match UI)
 hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed Enabled")
@@ -171,7 +184,7 @@ local function updateHUD(name, state)
     end
 end
 
--- LeftAlt hide UI / show HUD
+-- LeftAlt: hide UI / show HUD
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
@@ -180,9 +193,9 @@ UIS.InputBegan:Connect(function(input, gp)
     end
 end)
 
--- =========================================
--- UI HELPER (registerToggle)
--- =========================================
+-- =========================
+-- Toggle system (sync UI buttons & hotkeys)
+-- =========================
 local ToggleCallbacks = {}
 local function registerToggle(displayName, featureKey, onChange)
     local btn = Instance.new("TextButton", Content)
@@ -205,10 +218,10 @@ local function registerToggle(displayName, featureKey, onChange)
     end
 
     btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(46,46,46)}):Play()
+        pcall(function() TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(46,46,46)}):Play() end)
     end)
     btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = FEATURE[featureKey] and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)}):Play()
+        pcall(function() TweenService:Create(btn, TweenInfo.new(0.12), {BackgroundColor3 = FEATURE[featureKey] and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)}):Play() end)
     end)
 
     btn.MouseButton1Click:Connect(function()
@@ -219,124 +232,240 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
--- =========================================
--- ESP SYSTEM
--- =========================================
-local espHighlights, espCharConns, espTeamConns = {}, {}, {}
+-- =========================
+-- WalkSpeed input (with placeholder)
+-- =========================
+do
+    local frame = Instance.new("Frame", Content)
+    frame.Size = UDim2.new(1,0,0,40)
+    frame.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.55, -8, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.Text = "WalkSpeed"
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.45, -12, 0, 28)
+    box.Position = UDim2.new(0.55, 0, 0.5, -14)
+    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.TextColor3 = Color3.fromRGB(240,240,240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.Text = tostring(FEATURE.WalkValue)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+    box.Parent = frame
+
+    local placeholder = Instance.new("TextLabel", box)
+    placeholder.Size = UDim2.new(1,-12,1,0)
+    placeholder.Position = UDim2.new(0,6,0,0)
+    placeholder.BackgroundTransparency = 1
+    placeholder.Font = Enum.Font.Gotham
+    placeholder.TextSize = 12
+    placeholder.TextColor3 = Color3.fromRGB(140,140,140)
+    placeholder.Text = "16–200 (rekomendasi 25–40)"
+    placeholder.TextXAlignment = Enum.TextXAlignment.Left
+
+    local function updatePlaceholder()
+        placeholder.Visible = (box.Text == "")
+    end
+    box:GetPropertyChangedSignal("Text"):Connect(updatePlaceholder)
+    box.Focused:Connect(updatePlaceholder)
+    box.FocusLost:Connect(function(enter)
+        updatePlaceholder()
+        if enter then
+            local n = tonumber(box.Text)
+            if n and n >= 16 and n <= 200 then
+                FEATURE.WalkValue = n
+                box.Text = tostring(n)
+            else
+                box.Text = tostring(FEATURE.WalkValue)
+            end
+        end
+    end)
+    updatePlaceholder()
+end
+
+-- =========================
+-- ESP (Highlight) System
+-- =========================
+local espHighlights = {}   -- player -> Highlight
+local espCharConns = {}    -- player -> CharacterAdded connection
+local espTeamConns = {}    -- player -> Team property changed connection
+
+local function setHighlightColorsFor(h, player)
+    if not h or not player then return end
+    if player.Team and LocalPlayer.Team then
+        if player.Team == LocalPlayer.Team then
+            h.FillColor = Color3.fromRGB(24,205,24)   -- ally
+            pcall(function() h.OutlineColor = Color3.fromRGB(10,80,30) end)
+        else
+            h.FillColor = Color3.fromRGB(205,24,24)   -- enemy
+            pcall(function() h.OutlineColor = Color3.fromRGB(120,10,10) end)
+        end
+    else
+        h.FillColor = Color3.fromRGB(150,150,150)     -- neutral
+        pcall(function() h.OutlineColor = Color3.fromRGB(100,100,100) end)
+    end
+end
 
 local function refreshESPColorForPlayer(player)
     local h = espHighlights[player]
-    if not h then return end
-    if player.Team and LocalPlayer.Team then
-        if player.Team == LocalPlayer.Team then
-            h.FillColor = Color3.fromRGB(24,205,24)
-            h.OutlineColor = Color3.fromRGB(10,80,30)
-        else
-            h.FillColor = Color3.fromRGB(205,24,24)
-            h.OutlineColor = Color3.fromRGB(120,10,10)
-        end
-    else
-        h.FillColor = Color3.fromRGB(150,150,150)
-        h.OutlineColor = Color3.fromRGB(100,100,100)
+    if h then
+        pcall(function() setHighlightColorsFor(h, player) end)
     end
 end
 
 local function refreshAllESPColors()
-    for plr in pairs(espHighlights) do refreshESPColorForPlayer(plr) end
+    for player, _ in pairs(espHighlights) do
+        pcall(function() refreshESPColorForPlayer(player) end)
+    end
 end
 
 local function removeESPForPlayer(player)
-    if espHighlights[player] then espHighlights[player]:Destroy() end
-    if espCharConns[player] then espCharConns[player]:Disconnect() end
-    if espTeamConns[player] then espTeamConns[player]:Disconnect() end
-    espHighlights[player], espCharConns[player], espTeamConns[player] = nil,nil,nil
+    if not player then return end
+    if espHighlights[player] then
+        pcall(function()
+            if espHighlights[player].Parent then espHighlights[player]:Destroy() end
+        end)
+        espHighlights[player] = nil
+    end
+    if espCharConns[player] then
+        pcall(function() espCharConns[player]:Disconnect() end)
+        espCharConns[player] = nil
+    end
+    if espTeamConns[player] then
+        pcall(function() espTeamConns[player]:Disconnect() end)
+        espTeamConns[player] = nil
+    end
 end
 
 local function applyESPToCharacter(player, character)
     if not player or player == LocalPlayer or not character then return end
     removeESPForPlayer(player)
-    local h = Instance.new("Highlight")
-    h.Adornee = character
-    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.FillTransparency = 0.4
-    refreshESPColorForPlayer(player)
-    h.Parent = character
-    espHighlights[player] = h
+    pcall(function()
+        local h = Instance.new("Highlight")
+        h.Adornee = character
+        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        h.FillTransparency = 0.35
+        h.OutlineTransparency = 0
+        setHighlightColorsFor(h, player)
+        h.Parent = character
+        espHighlights[player] = h
+    end)
+end
+
+local function onPlayerTeamChanged(player)
+    pcall(function() refreshESPColorForPlayer(player) end)
 end
 
 local function applyESP(player)
     if not player or player == LocalPlayer then return end
-    if player.Character then applyESPToCharacter(player, player.Character) end
+    if player.Character then
+        pcall(function() applyESPToCharacter(player, player.Character) end)
+    end
+    -- CharacterAdded
+    if espCharConns[player] then pcall(function() espCharConns[player]:Disconnect() end) end
     espCharConns[player] = player.CharacterAdded:Connect(function(char)
-        task.wait(0.1)
-        applyESPToCharacter(player, char)
+        task.wait(0.08)
+        pcall(function() applyESPToCharacter(player, char) end)
     end)
+    -- Team changed
+    if espTeamConns[player] then pcall(function() espTeamConns[player]:Disconnect() end) end
     espTeamConns[player] = player:GetPropertyChangedSignal("Team"):Connect(function()
-        refreshESPColorForPlayer(player)
+        pcall(function() onPlayerTeamChanged(player) end)
     end)
 end
 
 local function enableESP()
-    for _, p in ipairs(Players:GetPlayers()) do applyESP(p) end
-    Players.PlayerAdded:Connect(function(p) applyESP(p) end)
-    Players.PlayerRemoving:Connect(function(p) removeESPForPlayer(p) end)
+    for _, p in ipairs(Players:GetPlayers()) do
+        pcall(function() applyESP(p) end)
+    end
+    Players.PlayerAdded:Connect(function(p) pcall(function() applyESP(p) end) end)
+    Players.PlayerRemoving:Connect(function(p) pcall(function() removeESPForPlayer(p) end) end)
 end
 
 local function disableESP()
-    for p in pairs(espHighlights) do removeESPForPlayer(p) end
+    for player, _ in pairs(espHighlights) do
+        pcall(function() removeESPForPlayer(player) end)
+    end
 end
 
+-- React to LocalPlayer team changes: recolor all highlights
 LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-    task.defer(refreshAllESPColors)
+    -- defer to let other updates apply
+    task.defer(function() pcall(function() refreshAllESPColors() end) end)
 end)
 
--- =========================================
--- AUTO PRESS E
--- =========================================
+-- =========================
+-- Auto Press E
+-- =========================
 local autoEThread = nil
 local function startAutoE()
     if autoEThread then return end
     autoEThread = task.spawn(function()
         while FEATURE.AutoE do
-            if VIM then
-                VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-            end
-            task.wait(math.clamp(FEATURE.AutoEInterval,0.05,5))
+            pcall(function()
+                if VIM then
+                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                end
+            end)
+            task.wait(math.clamp(FEATURE.AutoEInterval or 0.5, 0.05, 5))
         end
         autoEThread = nil
     end)
 end
 
--- =========================================
--- WALK SPEED
--- =========================================
+-- =========================
+-- Walk Speed
+-- =========================
 local walkThread = nil
 local function startWalk()
     if walkThread then return end
     walkThread = task.spawn(function()
         while FEATURE.WalkEnabled do
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = FEATURE.WalkValue end
-            task.wait(0.25)
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then pcall(function() hum.WalkSpeed = FEATURE.WalkValue end) end
+            task.wait(0.2)
         end
         walkThread = nil
     end)
 end
 
--- =========================================
--- AIMBOT (Sniper)
--- =========================================
+-- Respawn handling to reapply walk/esp states
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.12)
+    if FEATURE.WalkEnabled then
+        pcall(function()
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+    end
+    if FEATURE.ESP then
+        for _, p in ipairs(Players:GetPlayers()) do pcall(function() applyESP(p) end) end
+    end
+end)
+
+-- =========================
+-- Aimbot (Sniper-style)
+-- =========================
 local function angleBetween(v1,v2)
     if not v1 or not v2 then return math.pi end
     local denom = (v1.Magnitude * v2.Magnitude)
     if denom == 0 then return math.pi end
-    return math.acos(math.clamp(v1:Dot(v2)/denom,-1,1))
+    return math.acos(math.clamp(v1:Dot(v2) / denom, -1, 1))
 end
 
 local function getBestTargetByAngle()
     local camCF = Camera.CFrame
-    local camPos, camDir = camCF.Position, camCF.LookVector
+    local camPos = camCF.Position
+    local camDir = camCF.LookVector
     local best, bestPart, bestAng = nil, nil, math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
@@ -348,7 +477,9 @@ local function getBestTargetByAngle()
                     if dir.Magnitude > 0 then
                         local ang = angleBetween(camDir, dir.Unit)
                         if ang < bestAng then
-                            bestAng, best, bestPart = ang, plr, cand
+                            bestAng = ang
+                            best = plr
+                            bestPart = cand
                         end
                     end
                 end
@@ -362,86 +493,47 @@ RunService.RenderStepped:Connect(function()
     if FEATURE.Aimbot then
         local target, part, ang = getBestTargetByAngle()
         if target and part and ang then
-            local fovRad = math.rad(FEATURE.AIM_FOV_DEG)
+            local fovRad = math.rad(FEATURE.AIM_FOV_DEG or 8)
             if ang <= fovRad then
                 local camCF = Camera.CFrame
                 local dir = (part.Position - camCF.Position)
                 if dir.Magnitude > 0 then
                     local desired = CFrame.new(camCF.Position, camCF.Position + dir.Unit)
-                    local newCF = camCF:Lerp(desired, FEATURE.AIM_LERP)
-                    Camera.CFrame = newCF
+                    local newCF = camCF:Lerp(desired, FEATURE.AIM_LERP or 0.4)
+                    pcall(function() Camera.CFrame = newCF end)
                 end
             end
         end
     end
 end)
 
--- =========================================
--- REGISTER TOGGLES + INPUT
--- =========================================
-local btnESP = registerToggle("ESP","ESP",function(state)
+-- =========================
+-- Register toggles & hotkeys mapping
+-- =========================
+
+-- Register UI toggles (display names must match HUD labels)
+local btnESP = registerToggle and registerToggle("ESP","ESP",function(state)
     if state then enableESP() else disableESP() end
 end)
-local btnAutoE = registerToggle("Auto Press E","AutoE",function(state)
-    if state then startAutoE() end
-end)
-local btnWalk = registerToggle("WalkSpeed Enabled","WalkEnabled",function(state)
-    if state then startWalk() end
-end)
-local btnAim = registerToggle("Aimbot","Aimbot",function(state) end)
 
--- WalkSpeed input
-do
-    local frame = Instance.new("Frame", Content)
-    frame.Size = UDim2.new(1,0,0,40)
-    frame.BackgroundTransparency = 1
-
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.55,-8,1,0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 13
-    label.TextColor3 = Color3.fromRGB(230,230,230)
-    label.Text = "WalkSpeed"
-
-    local box = Instance.new("TextBox", frame)
-    box.Size = UDim2.new(0.45,-12,0,28)
-    box.Position = UDim2.new(0.55,0,0.5,-14)
-    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
-    box.TextColor3 = Color3.fromRGB(240,240,240)
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 13
-    box.ClearTextOnFocus = false
-    box.Text = tostring(FEATURE.WalkValue)
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
-
-    local placeholder = Instance.new("TextLabel", box)
-    placeholder.Size = UDim2.new(1,0,1,0)
-    placeholder.BackgroundTransparency = 1
-    placeholder.Font = Enum.Font.Gotham
-    placeholder.TextSize = 12
-    placeholder.TextColor3 = Color3.fromRGB(120,120,120)
-    placeholder.Text = "min 16 / max 100 / rec 25"
-    placeholder.TextXAlignment = Enum.TextXAlignment.Center
-    placeholder.ZIndex = box.ZIndex - 1
-
-    box.Focused:Connect(function() placeholder.Visible = false end)
-    box.FocusLost:Connect(function(enter)
-        placeholder.Visible = (box.Text == "")
-        if enter then
-            local val = tonumber(box.Text)
-            if val and val>=16 and val<=100 then
-                FEATURE.WalkValue = val
-            else
-                box.Text = tostring(FEATURE.WalkValue)
-            end
-        end
+-- If registerToggle wasn't defined earlier (it is), fallback:
+if not btnESP then
+    btnESP = registerToggle("ESP","ESP",function(state)
+        if state then enableESP() else disableESP() end
     end)
 end
 
--- =========================================
--- HOTKEY BINDING (prevent stuck)
--- =========================================
+local btnAutoE = registerToggle("Auto Press E","AutoE",function(state)
+    if state then startAutoE() end
+end)
+
+local btnWalk = registerToggle("WalkSpeed Enabled","WalkEnabled",function(state)
+    if state then startWalk() end
+end)
+
+local btnAim = registerToggle("Aimbot","Aimbot",function(state) end)
+
+-- Hotkey map to feature keys used in FEATURE table and ToggleCallbacks
 local HotkeyMap = {
     [Enum.KeyCode.F1] = "ESP",
     [Enum.KeyCode.F2] = "AutoE",
@@ -449,18 +541,72 @@ local HotkeyMap = {
     [Enum.KeyCode.F4] = "Aimbot",
 }
 
+-- Hotkey handling: call registered toggle setter so UI & HUD stay sync
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if HotkeyMap[input.KeyCode] then
-        local key = HotkeyMap[input.KeyCode]
-        if ToggleCallbacks[key] then
-            ToggleCallbacks[key](not FEATURE[key])
-        end
+    local key = input.KeyCode
+    local featureKey = HotkeyMap[key]
+    if featureKey and ToggleCallbacks[featureKey] then
+        pcall(function() ToggleCallbacks[featureKey](not FEATURE[featureKey]) end)
     end
 end)
 
--- INIT
+-- =========================
+-- Initial UI state sync & helper update loop
+-- =========================
+-- updateHUD calls already used by registerToggle when toggles change.
+-- We'll also provide a small loop to keep HUD/UI buttons visually updated each frame so they don't get out of sync.
+
+local function updateUIVisuals()
+    -- iterate ToggleCallbacks keys to update corresponding button background & HUD text
+    for featureKey, setter in pairs(ToggleCallbacks) do
+        -- nothing here: the setter updates HUD and button when called.
+        -- We rely on setters. But we will ensure HUD labels reflect FEATURE table now:
+        -- Map featureKey -> displayName in HUD table
+        local displayMap = {
+            ESP = "ESP",
+            AutoE = "Auto Press E",
+            WalkEnabled = "WalkSpeed Enabled",
+            Aimbot = "Aimbot",
+        }
+        local display = displayMap[featureKey]
+        if display then
+            updateHUD(display, FEATURE[featureKey])
+        end
+    end
+end
+
+-- Call updateUIVisuals every 0.5s to keep HUD text fresh (not expensive)
+task.spawn(function()
+    while true do
+        pcall(updateUIVisuals)
+        task.wait(0.5)
+    end
+end)
+
+-- =========================
+-- Ensure initial population of players for ESP (if enabled later)
+-- =========================
+Players.PlayerAdded:Connect(function(p)
+    if FEATURE.ESP then
+        pcall(function() applyESP(p) end)
+    end
+end)
+
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        -- nothing now; highlights created when ESP is enabled via toggle
+    end
+end
+
+-- =========================
+-- Initial HUD population
+-- =========================
 updateHUD("ESP", FEATURE.ESP)
 updateHUD("Auto Press E", FEATURE.AutoE)
 updateHUD("WalkSpeed Enabled", FEATURE.WalkEnabled)
 updateHUD("Aimbot", FEATURE.Aimbot)
+
+-- Print loaded
+print("[TPB_TycoonGUI_Final] loaded (full).")
+
