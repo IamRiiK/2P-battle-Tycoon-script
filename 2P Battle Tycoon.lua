@@ -1,4 +1,4 @@
--- 2P Battle Tycoon — Full (Modern Dark UI + Features + Safe cleanup)
+-- 2P Battle Tycoon — Full (Modern Dark UI + Features + Unlimited Health + Safe cleanup)
 -- Pastikan environment mendukung exploit-specific functions (firetouchinterest, VirtualInputManager) jika ingin AutoGrab/AutoE bekerja.
 
 -------------------------
@@ -23,7 +23,9 @@ local FEATURE = {
     AutoGrab = false,
     WalkEnabled = false,
     WalkValue = 16,
-    Aimbot = false
+    Aimbot = false,
+    UnlimitedHealth = false,
+    UnlimitedHealthValue = 9999
 }
 
 -------------------------
@@ -65,7 +67,7 @@ local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.Name = "MainFrame"
 MainFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
 MainFrame.Position = UDim2.new(0.28,0,0.18,0)
-MainFrame.Size = UDim2.new(0,320,0,420)
+MainFrame.Size = UDim2.new(0,320,0,480)
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Visible = true
@@ -118,7 +120,7 @@ local minCorner = Instance.new("UICorner", MinBtn); minCorner.CornerRadius = UDi
 local minStroke = Instance.new("UIStroke", MinBtn); minStroke.Color = Color3.fromRGB(75,75,75); minStroke.Thickness = 1
 
 local Content = Instance.new("Frame", MainFrame)
-Content.Size = UDim2.new(1, -16, 1, -56)
+Content.Size = UDim2.new(1, -16, 1, -64)
 Content.Position = UDim2.new(0,8,0,44)
 Content.BackgroundTransparency = 1
 
@@ -459,6 +461,93 @@ end)
 addConnection(hotF1)
 
 -------------------------
+-- Unlimited Health Implementation (local player only)
+-------------------------
+local unlimitedConn = nil
+local prevMaxHealth = nil
+
+local function enableUnlimitedHealthForHumanoid(hum)
+    if not hum or not hum.Parent then return end
+    -- store previous max health once (only if not stored)
+    if not prevMaxHealth then
+        prevMaxHealth = hum.MaxHealth
+    end
+    local target = tonumber(FEATURE.UnlimitedHealthValue) or 9999
+    pcall(function()
+        hum.MaxHealth = target
+        hum.Health = target
+    end)
+    -- create listener to reset health when it drops
+    unlimitedConn = hum.HealthChanged:Connect(function(h)
+        if not FEATURE.UnlimitedHealth then return end
+        if h < target then
+            pcall(function() hum.Health = target end)
+        end
+        -- ensure MaxHealth still at target
+        if hum.MaxHealth ~= target then
+            pcall(function() hum.MaxHealth = target end)
+        end
+    end)
+    addConnection(unlimitedConn)
+end
+
+local function disableUnlimitedHealthForHumanoid(hum)
+    if unlimitedConn then
+        pcall(function() unlimitedConn:Disconnect() end)
+        unlimitedConn = nil
+    end
+    -- try to restore previous MaxHealth if available
+    if hum and hum.Parent then
+        pcall(function()
+            if prevMaxHealth and type(prevMaxHealth) == "number" then
+                hum.MaxHealth = prevMaxHealth
+                if hum.Health > prevMaxHealth then
+                    hum.Health = prevMaxHealth
+                end
+            else
+                -- fallback to reasonable default
+                hum.MaxHealth = math.max(100, hum.MaxHealth)
+                if hum.Health > hum.MaxHealth then hum.Health = hum.MaxHealth end
+            end
+        end)
+    end
+    prevMaxHealth = nil
+end
+
+local function enableUnlimitedHealth()
+    -- apply to current character humanoid
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        enableUnlimitedHealthForHumanoid(hum)
+    end
+    -- ensure we reapply on respawn
+    local conn = LocalPlayer.CharacterAdded:Connect(function(c)
+        task.wait(0.08)
+        local h = c:FindFirstChildOfClass("Humanoid")
+        if h and FEATURE.UnlimitedHealth then
+            enableUnlimitedHealthForHumanoid(h)
+        end
+    end)
+    addConnection(conn)
+end
+
+local function disableUnlimitedHealth()
+    -- disconnect any active unlimitedConn and try to restore for current humanoid
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        disableUnlimitedHealthForHumanoid(hum)
+    else
+        if unlimitedConn then
+            pcall(function() unlimitedConn:Disconnect() end)
+            unlimitedConn = nil
+        end
+        prevMaxHealth = nil
+    end
+end
+
+-------------------------
 -- UI Controls wired to features
 -------------------------
 -- ESP toggle
@@ -525,10 +614,30 @@ createToggle("Aimbot (F1 hotkey)", function(val)
     FEATURE.Aimbot = val
 end)
 
+-- Unlimited Health toggle + value box
+createToggle("Unlimited Health", function(val)
+    FEATURE.UnlimitedHealth = val
+    if val then
+        enableUnlimitedHealth()
+    else
+        disableUnlimitedHealth()
+    end
+end)
+do
+    local _, box = createLabeledTextbox("Unlimited HP", FEATURE.UnlimitedHealthValue, "Numeric (e.g. 9999)", function(text)
+        local n = tonumber(text)
+        if n and n >= 1 and n <= 1e7 then
+            FEATURE.UnlimitedHealthValue = n
+        else
+            FEATURE.UnlimitedHealthValue = 9999
+        end
+    end)
+end
+
 -- Close & Cleanup button
 do
     local btn = Instance.new("TextButton", Content)
-    btn.Size = UDim2.new(1,0,0,40)
+    btn.Size = UDim2.new(1,0,0,44)
     btn.BackgroundColor3 = Color3.fromRGB(190,90,90)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 15
@@ -542,8 +651,12 @@ do
         FEATURE.WalkEnabled = false
         FEATURE.ESP = false
         FEATURE.Aimbot = false
+        FEATURE.UnlimitedHealth = false
+
         -- cleanup ESP visuals
         disableESP()
+        -- disable unlimited health properly
+        disableUnlimitedHealth()
         -- disconnect everything
         disconnectAll()
         -- destroy gui
@@ -554,21 +667,30 @@ end
 -------------------------
 -- Respawn handling & safety
 -------------------------
--- Ensure walk speed reapplied on respawn if enabled
+-- Ensure walk speed reapplied on respawn if enabled and reapply ESP/unlimited health
 local charAddedConn = LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(0.15)
+    -- reaplikasi WalkSpeed
     if FEATURE.WalkEnabled then
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then pcall(function() hum.WalkSpeed = FEATURE.WalkValue end) end
     end
-    --reaplikasi esp--
+    -- reaplikasi ESP
     if FEATURE.ESP then
-          enableESP()
+        -- re-enable ESP visuals and connections
+        enableESP()
+    end
+    -- reaplikasi Unlimited Health
+    if FEATURE.UnlimitedHealth then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            enableUnlimitedHealthForHumanoid(hum)
+        end
     end
 end)
 addConnection(charAddedConn)
 
--- keep references tidy when player leaves/join (optional cleanup)
+-- keep references tidy when player leaves (cleanup ESP)
 local playersRemovingConn = Players.PlayerRemoving:Connect(function(p)
     removeESPForPlayer(p)
 end)
@@ -580,4 +702,5 @@ addConnection(playersRemovingConn)
 -- This script bundles UI + features. Some features (AutoE, AutoGrab) rely on exploit-specific APIs:
 --  - VirtualInputManager (for VIM:SendKeyEvent) and firetouchinterest. They are used inside pcall so absence won't break the script.
 -- Aimbot overrides Camera.CFrame — some camera scripts may fight with it.
+-- Unlimited Health manipulates Humanoid.MaxHealth and Health on the local humanoid only.
 -- Use responsibly; modifying game state may violate rules/ToS for the platform or server.
