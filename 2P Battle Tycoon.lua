@@ -1,6 +1,7 @@
 -- 2P Battle Tycoon — Full Fixed Script (Final v3)
 -- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
 -- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
+--Credit to RiiK @RiiK26--
 
 -- Ensure game loaded
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -285,13 +286,14 @@ do
 end
 
 -- ==========
--- ESP System
+-- ESP System (Box ESP dengan Highlight)
 -- ==========
 local espObjects = {}
+
 local function clearESP(p)
     if espObjects[p] then
         for _,v in pairs(espObjects[p]) do
-            v:Destroy()
+            if v and v.Parent then v:Destroy() end
         end
         espObjects[p] = nil
     end
@@ -300,45 +302,67 @@ end
 local function createESP(p)
     clearESP(p)
     if not p.Character then return end
-    local head = p.Character:FindFirstChild("Head")
-    if not head then return end
+    local root = p.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
 
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESP_Billboard"
-    billboard.Size = UDim2.new(0,100,0,30)
-    billboard.AlwaysOnTop = true
-    billboard.Adornee = head
+    local hl = Instance.new("Highlight")
+    hl.Name = "BoxESP"
+    hl.Adornee = p.Character
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.OutlineTransparency = 0
+    hl.FillTransparency = 0.7
 
-    local text = Instance.new("TextLabel", billboard)
-    text.Size = UDim2.new(1,0,1,0)
-    text.BackgroundTransparency = 1
-    text.Font = Enum.Font.GothamBold
-    text.TextSize = 14
-    text.TextColor3 = Color3.fromRGB(255,60,60)
-    text.TextStrokeTransparency = 0.4
-    text.Text = p.Name
+    -- Warna berdasarkan tim
+    if p.Team and LocalPlayer.Team then
+        if p.Team == LocalPlayer.Team then
+            hl.FillColor = Color3.fromRGB(80,255,80)   -- Hijau (tim sama)
+        else
+            hl.FillColor = Color3.fromRGB(255,60,60)  -- Merah (musuh)
+        end
+    else
+        hl.FillColor = Color3.fromRGB(255,220,50)     -- Kuning (neutral)
+    end
 
-    billboard.Parent = CoreGui or PlayerGui
-    espObjects[p] = {billboard}
+    hl.Parent = p.Character
+    espObjects[p] = {hl}
 end
 
-local function refreshESP()
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if FEATURE.ESP and p.Team and LocalPlayer.Team and p.Team ~= LocalPlayer.Team then
-                createESP(p)
-            else
-                clearESP(p)
-            end
-        end
+local function refreshESPForPlayer(p)
+    if FEATURE.ESP then
+        createESP(p)
+    else
+        clearESP(p)
     end
 end
 
 local function enableESP()
-    refreshESP()
-    Players.PlayerAdded:Connect(refreshESP)
-    Players.PlayerRemoving:Connect(clearESP)
-    RunService.Heartbeat:Connect(refreshESP)
+    -- Untuk semua player awal
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            refreshESPForPlayer(p)
+            -- Auto pasang ulang ESP kalau respawn
+            p.CharacterAdded:Connect(function()
+                task.wait(0.5) -- delay kecil biar humanoid kebentuk
+                refreshESPForPlayer(p)
+            end)
+        end
+    end
+
+    -- Kalau ada player baru join
+    Players.PlayerAdded:Connect(function(p)
+        if p ~= LocalPlayer then
+            p.CharacterAdded:Connect(function()
+                task.wait(0.5)
+                refreshESPForPlayer(p)
+            end)
+            refreshESPForPlayer(p)
+        end
+    end)
+
+    -- Kalau ada player keluar
+    Players.PlayerRemoving:Connect(function(p)
+        clearESP(p)
+    end)
 end
 
 local function disableESP()
@@ -346,6 +370,7 @@ local function disableESP()
         clearESP(p)
     end
 end
+
 
 -- ==========
 -- Auto Press E
