@@ -561,6 +561,10 @@ local charAddedConn = LocalPlayer.CharacterAdded:Connect(function(char)
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then pcall(function() hum.WalkSpeed = FEATURE.WalkValue end) end
     end
+    --reaplikasi esp--
+    if FEATURE.ESP then
+          enableESP()
+    end
 end)
 addConnection(charAddedConn)
 
