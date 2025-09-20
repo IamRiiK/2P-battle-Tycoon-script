@@ -1,8 +1,8 @@
--- 2P Battle Tycoon — Full Fixed Script (Patched) with draggable UI
--- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot
--- Improvements: fixes to AutoE feedback, robust ESP lifecycle, walkspeed save/restore,
--- safer camera writes, improved connection tracking, R6/R15 compatibility, and more.
--- CREDIT TO: RiiK (RiiK26) --
+-- 2P Battle Tycoon — Refactored Full Script (Patched, Clean, + Anti-Spread)
+-- Features: Draggable UI + HUD + ESP + AutoE + WalkSpeed + Aimbot + AntiSpread
+-- Fixes: single drag impl (no leak), ESP lifecycle & distance refresh, scoped connections,
+--        safer camera writes, walk restore consistent, AutoE debounce, aimbot non-fatal errors
+-- CREDIT: RiiK (RiiK26)
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
@@ -17,7 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Camera safety
+-- Camera safety (get or wait)
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
@@ -39,40 +39,57 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false, -- if true, aimbot only while right mouse held
+    AntiSpread = false, -- NEW: attempt to remove weapon spread client-side
 }
 
 local MAX_ESP_DISTANCE = 250 -- studs
 local WALK_UPDATE_INTERVAL = 0.12 -- seconds
 
--- Connection tracking for cleanup
-local Connections = {}
-local function keep(conn)
-    -- store RBXScriptConnection safely
-    if conn == nil then return nil end
-    local t = typeof(conn)
-    if t == "RBXScriptConnection" then
-        table.insert(Connections, conn)
-    else
-        -- accept any table-like with Disconnect (for compatibility)
-        local ok, has = pcall(function() return conn and conn.Disconnect end)
-        if ok and has then table.insert(Connections, conn) end
+-- Connection tracking: persistent vs player-scoped
+local PersistentConnections = {}
+local PlayerConnections = {}
+local function keepPersistent(conn)
+    if conn and conn.Disconnect then
+        table.insert(PersistentConnections, conn)
     end
     return conn
 end
-local function clearConnections()
-    for _,c in ipairs(Connections) do
+local function keepPlayer(conn)
+    if conn and conn.Disconnect then
+        table.insert(PlayerConnections, conn)
+    end
+    return conn
+end
+local function clearPlayerConnections()
+    for _,c in ipairs(PlayerConnections) do
         pcall(function() c:Disconnect() end)
     end
-    Connections = {}
+    PlayerConnections = {}
+end
+local function clearAllConnections()
+    -- clear player-scoped first
+    clearPlayerConnections()
+    for _,c in ipairs(PersistentConnections) do
+        pcall(function() c:Disconnect() end)
+    end
+    PersistentConnections = {}
 end
 
--- Helpers
+-- Run a cleanup early if re-running
+pcall(function()
+    if _G and _G.__TPB_CLEANUP then
+        pcall(_G.__TPB_CLEANUP)
+    end
+end)
+-- ensure old connections cleared before proceeding (prevents dup connections on re-run)
+clearAllConnections()
+
+-- Safe UI parenting
 local function safeParentGui(gui)
     gui.ResetOnSpawn = false
     if PlayerGui and PlayerGui.Parent then
         gui.Parent = PlayerGui
     else
-        -- fallback: attempt to parent to PlayerGui again later
         pcall(function() gui.Parent = PlayerGui end)
     end
 end
@@ -115,7 +132,7 @@ MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
 
--- Title / Drag area (manual drag, not deprecated Draggable)
+-- Title / Drag area
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
 TitleBar.BackgroundTransparency = 1
@@ -168,7 +185,7 @@ Content.Position = UDim2.new(0,8,0,48)
 Content.BackgroundTransparency = 1
 Instance.new("UIListLayout", Content).Padding = UDim.new(0,12)
 
--- Minimize button functionality
+-- Minimize button
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
@@ -176,13 +193,12 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
--- Make the MainFrame draggable by title bar (mouse & touch)
--- Make the MainFrame draggable by title bar (mouse & touch) -- FIXED
+-- Dragging (single, stable implementation) - NO per-input Changed connections (avoids leak)
 do
     local dragging = false
-    local dragInput = nil
     local dragStart = nil
     local startPosPixels = nil
+    local dragInputType = nil
 
     local function getScreenSize()
         local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
@@ -196,25 +212,6 @@ do
         return Vector2.new(x, y)
     end
 
-    local function onInputBegan(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragInput = input
-            -- Use input.Position when available; otherwise fallback to mouse location
-            dragStart = (input.Position and Vector2.new(input.Position.X, input.Position.Y)) or UIS:GetMouseLocation()
-            startPosPixels = toPixels(MainFrame.Position)
-            -- ensure we stop dragging if the input ends on the input object itself
-            if input.Changed then
-                input.Changed:Connect(function(property)
-                    if property == "UserInputState" and input.UserInputState == Enum.UserInputState.End then
-                        dragging = false
-                        dragInput = nil
-                    end
-                end)
-            end
-        end
-    end
-
     local function getInputPos(input)
         if input and input.Position then
             return Vector2.new(input.Position.X, input.Position.Y)
@@ -223,97 +220,53 @@ do
         end
     end
 
-    local function onInputChanged(input)
+    local function startDrag(input)
+        dragging = true
+        dragInputType = input.UserInputType
+        dragStart = getInputPos(input)
+        startPosPixels = toPixels(MainFrame.Position)
+    end
+
+    local function updateDrag(input)
         if not dragging then return end
-        -- only act for the active drag input
-        if input ~= dragInput and input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+        if input.UserInputType ~= dragInputType and input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
             return
         end
-
         local currentPos = getInputPos(input)
         local delta = currentPos - dragStart
         local newX = math.floor(startPosPixels.X + delta.X)
         local newY = math.floor(startPosPixels.Y + delta.Y)
-
-        -- clamp to viewport so frame can't be dragged completely off-screen
         local screen = getScreenSize()
         local frameSize = Vector2.new(MainFrame.AbsoluteSize.X, MainFrame.AbsoluteSize.Y)
         newX = clamp(newX, 0, math.max(0, screen.X - frameSize.X))
         newY = clamp(newY, 0, math.max(0, screen.Y - frameSize.Y))
-
         MainFrame.Position = UDim2.new(0, newX, 0, newY)
     end
 
-    local function onInputEnded(input)
-        if input == dragInput then
+    local function endDrag(input)
+        if not dragging then return end
+        if input.UserInputType == dragInputType or input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragging = false
-            dragInput = nil
+            dragInputType = nil
         end
     end
 
-    -- connect input began on TitleBar and DragHandle
+    local function onInputBegan(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            startDrag(input)
+        end
+    end
+
     TitleBar.InputBegan:Connect(onInputBegan)
     DragHandle.InputBegan:Connect(onInputBegan)
 
-    -- also listen for InputEnded from those GUI objects as safety
-    TitleBar.InputEnded:Connect(onInputEnded)
-    DragHandle.InputEnded:Connect(onInputEnded)
-
-    -- global listeners for movement / end
-    keep(UIS.InputChanged:Connect(function(input)
+    keepPersistent(UIS.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            onInputChanged(input)
+            updateDrag(input)
         end
     end))
-
-    keep(UIS.InputEnded:Connect(function(input)
-        onInputEnded(input)
-    end))
-end
-
-
-    local function onInputChanged(input)
-        if not dragging then return end
-        if input ~= dragInput then return end
-        local delta = input.Position - dragStart
-        -- startPos is a UDim2; convert to pixel offsets then add delta
-        local newX = startPos.X.Offset + delta.X
-        local newY = startPos.Y.Offset + delta.Y
-
-        -- clamp to viewport (prevent moving off-screen)
-        local screen = getScreenSize()
-        local frameSize = Vector2.new(MainFrame.AbsoluteSize.X, MainFrame.AbsoluteSize.Y)
-        newX = math.floor(clamp(newX, 0, math.max(0, screen.X - frameSize.X)))
-        newY = math.floor(clamp(newY, 0, math.max(0, screen.Y - frameSize.Y)))
-
-        MainFrame.Position = UDim2.new(0, newX, 0, newY)
-    end
-
-    local function onInputEnded(input)
-        if input == dragInput then
-            dragging = false
-            dragInput = nil
-        end
-    end
-
-    -- Connect on the TitleBar and DragHandle (allow dragging by either)
-    TitleBar.InputBegan:Connect(function(input)
-        onInputBegan(input)
-    end)
-    DragHandle.InputBegan:Connect(function(input)
-        onInputBegan(input)
-    end)
-
-    -- Important: listen for InputChanged on UserInputService for MouseMovement and Touch
-    keep(UIS.InputChanged:Connect(function(input)
-        -- Mouse movement
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            onInputChanged(input)
-        end
-    end))
-
-    keep(UIS.InputEnded:Connect(function(input)
-        onInputEnded(input)
+    keepPersistent(UIS.InputEnded:Connect(function(input)
+        endDrag(input)
     end))
 end
 
@@ -355,6 +308,7 @@ hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
+hudAdd("Anti-Spread")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -364,7 +318,7 @@ local function updateHUD(name, state)
 end
 
 -- Toggle UI/HUD with LeftAlt
-keep(UIS.InputBegan:Connect(function(input, gp)
+keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
         MainFrame.Visible = not MainFrame.Visible
@@ -446,9 +400,10 @@ do
     end)
 end
 
--- ESP System (Highlight AlwaysOnTop, team colors, distance cull)
+-- ESP System (Highlight AlwaysOnTop, team colors, distance cull) with distance refresh loop
 local espObjects = {}
 local MAX_ESP_DIST_SQ = MAX_ESP_DISTANCE * MAX_ESP_DISTANCE
+local perPlayerListeners = {} -- keep track to avoid duplicate listeners
 
 local function clearESPForPlayer(p)
     if espObjects[p] then
@@ -508,93 +463,164 @@ local function refreshESPForPlayer(p)
     end
 end
 
-local function enableESP()
-    -- cleanup existing
-    for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+local function ensurePerPlayerListeners(p)
+    if perPlayerListeners[p] then return end
+    perPlayerListeners[p] = true
+    -- cleanup when player removed/character removed
+    keepPlayer(p.CharacterRemoving:Connect(function()
+        clearESPForPlayer(p)
+    end))
+    keepPlayer(p.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        refreshESPForPlayer(p)
+    end))
+    keepPlayer(p:GetPropertyChangedSignal("Team"):Connect(function() refreshESPForPlayer(p) end))
+end
 
-    -- initial apply and hook CharacterAdded/Removing for each player
+local espDistanceUpdater = nil
+local function startESPDistanceLoop()
+    if espDistanceUpdater then return end
+    espDistanceUpdater = task.spawn(function()
+        while FEATURE.ESP do
+            safeWaitCamera()
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then
+                    if p.Character then
+                        local root = rootPartOfCharacter(p.Character)
+                        if root and Camera and Camera.CFrame then
+                            local diff = root.Position - Camera.CFrame.Position
+                            local dsq = diff:Dot(diff)
+                            if dsq <= MAX_ESP_DIST_SQ then
+                                if not espObjects[p] then
+                                    createESPForPlayer(p)
+                                else
+                                    -- update color if team changed
+                                    if espObjects[p][1] and espObjects[p][1].Parent then
+                                        espObjects[p][1].FillColor = getESPColor(p)
+                                    end
+                                end
+                            else
+                                clearESPForPlayer(p)
+                            end
+                        end
+                    else
+                        clearESPForPlayer(p)
+                    end
+                    ensurePerPlayerListeners(p)
+                end
+            end
+            task.wait(0.45)
+        end
+        -- exit cleanup: remove any leftover highlights
+        for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+        espDistanceUpdater = nil
+    end)
+end
+
+local function enableESP()
+    -- ensure previous per-player listeners cleared
+    clearPlayerConnections()
+    perPlayerListeners = {}
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
-            if p.Character then
-                -- clear and refresh on character removal
-                keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
-            end
-            keep(p.CharacterAdded:Connect(function()
-                task.wait(0.5)
-                refreshESPForPlayer(p)
-                -- ensure we clear when character is removed
-                if p.Character then
-                    keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
-                end
-            end))
-            -- if player changes team, update color
-            keep(p:GetPropertyChangedSignal("Team"):Connect(function() refreshESPForPlayer(p) end))
+            ensurePerPlayerListeners(p)
         end
     end
 
-    -- watch for new players
-    keep(Players.PlayerAdded:Connect(function(p)
+    keepPlayer(Players.PlayerAdded:Connect(function(p)
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
-            keep(p.CharacterAdded:Connect(function()
-                task.wait(0.5)
-                refreshESPForPlayer(p)
-                if p.Character then
-                    keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
-                end
-            end))
-            keep(p:GetPropertyChangedSignal("Team"):Connect(function() refreshESPForPlayer(p) end))
-            keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+            ensurePerPlayerListeners(p)
         end
     end))
 
-    -- cleanup when players leave
-    keep(Players.PlayerRemoving:Connect(function(p) clearESPForPlayer(p) end))
+    keepPlayer(Players.PlayerRemoving:Connect(function(p)
+        clearESPForPlayer(p)
+        perPlayerListeners[p] = nil
+    end))
+
+    -- start distance loop
+    startESPDistanceLoop()
+    updateHUD("ESP", true)
 end
 
 local function disableESP()
+    FEATURE.ESP = false
+    -- clear highlights and per-player listeners
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+    perPlayerListeners = {}
+    -- clear any player-scoped connections created by enableESP
+    clearPlayerConnections()
+    updateHUD("ESP", false)
 end
 
 -- Auto Press E
 local autoEThread = nil
-local autoEDebounce = false
+local autoERunning = false
 local function startAutoE()
-    if autoEThread then return end
+    if autoERunning then return end
     if not VIM then
         FEATURE.AutoE = false
         warn("AutoE: VirtualInputManager not available. AutoE disabled.")
         updateHUD("Auto Press E", false)
         return
     end
+    autoERunning = true
     autoEThread = task.spawn(function()
         while FEATURE.AutoE do
-            pcall(function()
-                VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+            local ok, err = pcall(function()
+                -- safe/clamped interval
+                local interval = clamp(FEATURE.AutoEInterval or 0.5, 0.05, 5)
+                -- send press and release
+                pcall(function()
+                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                end)
+                task.wait(interval)
             end)
-            task.wait(clamp(FEATURE.AutoEInterval or 0.5, 0.05, 5))
+            if not ok then
+                warn("AutoE error:", err)
+            end
         end
+        autoERunning = false
         autoEThread = nil
     end)
+    updateHUD("Auto Press E", true)
 end
 
 local function stopAutoE()
     FEATURE.AutoE = false
-    -- thread will exit naturally; ensure reference cleared
+    -- autoEThread will exit naturally; flag prevents double spawn
     if autoEThread then
-        -- wait a short moment for thread to cleanup
+        -- give short time for thread to wrap
         task.spawn(function()
-            task.wait(0.2)
+            task.wait(0.15)
             autoEThread = nil
+            autoERunning = false
         end)
+    else
+        autoERunning = false
     end
     updateHUD("Auto Press E", false)
 end
 
 -- WalkSpeed (throttled writes) with save/restore on toggles/respawn
 local originalWalkSpeed = nil
+local function cacheDefaultWalkSpeed()
+    -- store a sensible default (tries to read currently present humanoid once)
+    pcall(function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum and originalWalkSpeed == nil then
+            originalWalkSpeed = hum.WalkSpeed
+        end
+    end)
+    if originalWalkSpeed == nil then
+        -- fallback to common default if unknown
+        originalWalkSpeed = 16
+    end
+end
+
 local function setPlayerWalkSpeed(value)
     pcall(function()
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -602,10 +628,13 @@ local function setPlayerWalkSpeed(value)
     end)
 end
 
+-- ensure we capture default early
+cacheDefaultWalkSpeed()
+
 -- heartbeat loop to maintain walkspeed while enabled
 do
     local acc = 0
-    keep(RunService.Heartbeat:Connect(function(dt)
+    keepPersistent(RunService.Heartbeat:Connect(function(dt)
         if not FEATURE.WalkEnabled then return end
         acc = acc + dt
         if acc < WALK_UPDATE_INTERVAL then return end
@@ -613,7 +642,7 @@ do
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum then
-                if not originalWalkSpeed then originalWalkSpeed = hum.WalkSpeed end
+                if originalWalkSpeed == nil then originalWalkSpeed = hum.WalkSpeed end
                 if hum.WalkSpeed ~= FEATURE.WalkValue then
                     hum.WalkSpeed = FEATURE.WalkValue
                 end
@@ -622,7 +651,7 @@ do
     end))
 end
 
--- restore walk speed on disable or when humanoid removed
+-- restore walk speed
 local function restoreWalkSpeed()
     pcall(function()
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -630,10 +659,11 @@ local function restoreWalkSpeed()
             hum.WalkSpeed = originalWalkSpeed
         end
     end)
-    originalWalkSpeed = nil
+    -- keep originalWalkSpeed so future toggles restore to same base unless explicitly reset
+    updateHUD("WalkSpeed", false)
 end
 
--- Aimbot (safe: checks focus, uses Lerp smoothing, aims only when allowed)
+-- Aimbot helpers
 local function angleBetweenVectors(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
@@ -641,13 +671,83 @@ local function angleBetweenVectors(a, b)
     return math.deg(math.acos(val))
 end
 
-keep(RunService.RenderStepped:Connect(function()
+-- Anti-Spread (best-effort, client-side)
+-- Try to zero out common spread/recoil properties on currently equipped tool(s).
+-- NOTE: many games enforce spread server-side; client-side changes may not work in that case.
+local antiSpreadListeners = {}
+local function patchToolSpread(tool)
+    if not tool then return end
+    -- common property names to attempt to set to 0
+    local candidates = {"Spread", "SpreadAmount", "BulletSpread", "Recoil", "Accuracy", "SpreadRadius", "SpreadAngle"}
+    for _,name in ipairs(candidates) do
+        local v = tool:FindFirstChild(name)
+        if v and v:IsA("NumberValue") then
+            pcall(function() v.Value = 0 end)
+        elseif v and v:IsA("BoolValue") then
+            pcall(function() v.Value = false end)
+        elseif v and v:IsA("NumberValue") == false and v and v:IsA("IntValue") then
+            pcall(function() v.Value = 0 end)
+        end
+    end
+    -- also try to set properties on tool itself if present (rare)
+    pcall(function()
+        if tool:IsA("Tool") then
+            for _,prop in ipairs({"Spread","Recoil","Accuracy"}) do
+                if tool[prop] ~= nil then
+                    pcall(function() tool[prop] = 0 end)
+                end
+            end
+        end
+    end)
+end
+
+local function enableAntiSpreadForCharacter(char)
+    if not char then return end
+    -- patch any tools already in character
+    for _,obj in ipairs(char:GetChildren()) do
+        if obj:IsA("Tool") or obj:IsA("HopperBin") then
+            patchToolSpread(obj)
+        end
+    end
+    -- watch for tools equipped/added
+    if antiSpreadListeners[char] then return end
+    antiSpreadListeners[char] = true
+    keepPlayer(char.ChildAdded:Connect(function(child)
+        if (child:IsA("Tool") or child:IsA("HopperBin")) and FEATURE.AntiSpread then
+            task.wait(0.04)
+            patchToolSpread(child)
+        end
+    end))
+end
+
+local function disableAntiSpread()
+    FEATURE.AntiSpread = false
+    -- nothing to explicitly undo since we only set client-side values; remove listeners
+    antiSpreadListeners = {}
+end
+
+local function enableAntiSpread()
+    FEATURE.AntiSpread = true
+    -- attempt to patch LocalPlayer character tools
+    if LocalPlayer.Character then
+        enableAntiSpreadForCharacter(LocalPlayer.Character)
+    end
+    -- watch for future respawns
+    keepPersistent(LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if FEATURE.AntiSpread then enableAntiSpreadForCharacter(char) end
+    end))
+    updateHUD("Anti-Spread", true)
+end
+
+-- Aimbot loop (RenderStepped) — non-fatal error handling (don't permanently disable)
+keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
     -- don't aim while typing into textboxes
     if UIS:GetFocusedTextBox() then return end
     safeWaitCamera()
-    if not Camera then return end
+    if not Camera or not Camera.CFrame then return end
 
     local bestHead = nil
     local bestAngle = 1e9
@@ -655,20 +755,21 @@ keep(RunService.RenderStepped:Connect(function()
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             local okTarget = false
-            -- team check: if teams exist, only target other teams
             if p.Team and LocalPlayer.Team then
                 okTarget = (p.Team ~= LocalPlayer.Team)
             else
-                okTarget = true -- no teams set; target anyone else
+                okTarget = true
             end
             if okTarget and p.Character then
                 local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
                 if head then
-                    local dir = (head.Position - Camera.CFrame.Position)
-                    local ang = angleBetweenVectors(Camera.CFrame.LookVector, dir.Unit)
-                    if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
-                        bestHead = head
-                        bestAngle = ang
+                    local dir = head.Position - Camera.CFrame.Position
+                    if dir.Magnitude > 0.001 then
+                        local ang = angleBetweenVectors(Camera.CFrame.LookVector, dir.Unit)
+                        if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
+                            bestHead = head
+                            bestAngle = ang
+                        end
                     end
                 end
             end
@@ -677,19 +778,20 @@ keep(RunService.RenderStepped:Connect(function()
 
     if bestHead and bestHead.Parent then
         local success, err = pcall(function()
-            local dir = (bestHead.Position - Camera.CFrame.Position).Unit
+            local dir = (bestHead.Position - Camera.CFrame.Position)
+            if dir.Magnitude < 1e-4 then return end
+            dir = dir.Unit
             local currentLook = Camera.CFrame.LookVector
-            local blended = currentLook:Lerp(dir, clamp(FEATURE.AIM_LERP, 0, 1))
+            local lerpVal = clamp(FEATURE.AIM_LERP, 0.01, 0.95)
+            local blended = currentLook:Lerp(dir, lerpVal)
             local pos = Camera.CFrame.Position
             local targetCFrame = CFrame.new(pos, pos + blended)
-            -- set camera gently
-            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, clamp(FEATURE.AIM_LERP, 0.05, 0.9))
+            -- Attempt camera write — if it errors once, just warn and continue next frame
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, lerpVal)
         end)
         if not success then
-            -- if camera write fails, disable aimbot to be safe
-            warn("Aimbot camera write error:", err)
-            FEATURE.Aimbot = false
-            updateHUD("Aimbot", false)
+            -- non-fatal: warn but don't permanently disable aimbot
+            warn("Aimbot camera write error (non-fatal):", err)
         end
     end
 end))
@@ -697,6 +799,7 @@ end))
 -- Register Toggles (UI + callbacks)
 registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
+    updateHUD("ESP", state)
 end)
 registerToggle("Auto Press E", "AutoE", function(state)
     if state then
@@ -707,19 +810,22 @@ registerToggle("Auto Press E", "AutoE", function(state)
 end)
 registerToggle("WalkSpeed", "WalkEnabled", function(state)
     if state then
-        -- when enabling, we start enforcing walk speed in heartbeat loop
-        -- store original if possible
-        pcall(function()
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and not originalWalkSpeed then originalWalkSpeed = hum.WalkSpeed end
-        end)
+        -- store original if possible (cached earlier)
+        cacheDefaultWalkSpeed()
+        updateHUD("WalkSpeed", true)
     else
         restoreWalkSpeed()
     end
 end)
 registerToggle("Aimbot", "Aimbot", function(state)
-    if not state then
-        -- nothing special; RenderStepped loop will stop acting
+    updateHUD("Aimbot", state)
+end)
+registerToggle("Anti-Spread", "AntiSpread", function(state)
+    if state then
+        enableAntiSpread()
+    else
+        disableAntiSpread()
+        updateHUD("Anti-Spread", false)
     end
 end)
 
@@ -730,11 +836,12 @@ for k,_ in pairs(FEATURE) do
     if k == "AutoE" then display = "Auto Press E" end
     if k == "WalkEnabled" then display = "WalkSpeed" end
     if k == "Aimbot" then display = "Aimbot" end
+    if k == "AntiSpread" then display = "Anti-Spread" end
     if display then updateHUD(display, FEATURE[k]) end
 end
 
--- Hotkeys (F1-F4)
-keep(UIS.InputBegan:Connect(function(input, gp)
+-- Hotkeys (F1-F5)
+keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then
         ToggleCallbacks.ESP(not FEATURE.ESP)
@@ -744,23 +851,27 @@ keep(UIS.InputBegan:Connect(function(input, gp)
         ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
     elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then
         ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
+    elseif input.KeyCode == Enum.KeyCode.F5 and ToggleCallbacks.AntiSpread then
+        ToggleCallbacks.AntiSpread(not FEATURE.AntiSpread)
     end
 end))
 
--- Cleanup (character remove & global)
-keep(LocalPlayer.CharacterRemoving:Connect(function()
-    -- clear ESP highlights
+-- Cleanup for character remove (only player-scoped)
+keepPersistent(LocalPlayer.CharacterRemoving:Connect(function()
+    -- clear ESP highlights for everyone (they should be tied to characters)
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-    -- disconnect tracked connections
-    clearConnections()
+    -- clear only player-scoped connections (listeners for players/characters)
+    clearPlayerConnections()
     -- restore walk speed
     restoreWalkSpeed()
     -- stop AutoE
     stopAutoE()
+    -- clear anti-spread listeners
+    antiSpreadListeners = {}
 end))
 
--- Ensure we restore walk speed on respawn as well
-keep(LocalPlayer.CharacterAdded:Connect(function()
+-- Ensure we restore/set walk speed on respawn as well
+keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     if FEATURE.WalkEnabled then
         pcall(function()
@@ -769,23 +880,39 @@ keep(LocalPlayer.CharacterAdded:Connect(function()
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
     end
+    -- If ESP enabled, refresh per-player esp for characters that just loaded
+    if FEATURE.ESP then
+        -- small delay to allow other characters to initialize
+        task.wait(0.2)
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                refreshESPForPlayer(p)
+            end
+        end
+    end
+    -- If Anti-Spread enabled, re-apply to new character
+    if FEATURE.AntiSpread and LocalPlayer.Character then
+        enableAntiSpreadForCharacter(LocalPlayer.Character)
+    end
 end))
 
 -- Provide a global cleanup hook for re-run in some executors
 if _G then
     _G.__TPB_CLEANUP = function()
         for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-        clearConnections()
+        -- destroy GUIs
         pcall(function()
             local g = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
             if g then g:Destroy() end
             local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
             if gh then gh:Destroy() end
         end)
-        -- restore walk speed and stop autoE
+        -- restore walk and stop autoE
         restoreWalkSpeed()
         stopAutoE()
+        -- clear all connections (persistent and player)
+        clearAllConnections()
     end
 end
 
-print("✅ TPB Full Script loaded (Patched). Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI can now be dragged.")
+print("✅ TPB Refactor loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot, F5=AntiSpread. LeftAlt toggles UI/HUD. UI draggable.")
