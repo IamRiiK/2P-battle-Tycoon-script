@@ -1,62 +1,6 @@
--- 🔥 QUICK RELOAD SYSTEM
-local QuickReloadEnabled = true -- default aktif
-local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-
--- mapping max ammo (bisa ditambah sesuai kebutuhan)
-local MaxAmmoMap = {
-    ["SMG"] = 30,
-    ["Sniper"] = 1,
-    ["Railgun"] = 3
-}
-
--- toggle dengan F5
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.F5 then
-        QuickReloadEnabled = not QuickReloadEnabled
-        warn("⚡ QuickReload: " .. tostring(QuickReloadEnabled))
-    end
-end)
-
--- cari ammo value dari tool
-local function getAmmoValue(tool)
-    if tool and tool:FindFirstChild("Ammo") and tool.Ammo:IsA("NumberValue") then
-        return tool.Ammo
-    end
-    return nil
-end
-
--- fungsi quick reload
-local function quickReload(tool)
-    local ammoVal = getAmmoValue(tool)
-    if ammoVal then
-        local maxAmmo = MaxAmmoMap[tool.Name] or ammoVal.Value
-        ammoVal.Value = maxAmmo
-        warn("⚡ QuickReload: " .. tool.Name .. " -> refill " .. maxAmmo)
-    end
-end
-
--- deteksi tombol reload bawaan (R)
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.R then
-        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if tool and QuickReloadEnabled then
-            -- blokir reload bawaan, ganti quick reload
-            quickReload(tool)
-        end
-    end
-end)
-
------------------------------------------------------------------
--- 🔽 SISA SCRIPT UTAMAMU 🔽
 -- 2P Battle Tycoon — Full Fixed Script (Final v3)
 -- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
--- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=A
--- ... (lanjutkan semua kode utamamu di sini, tanpa diubah) ...
--- 2P Battle Tycoon — Full Fixed Script (Final v3 + Instant QuickReload Universal)
--- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4) + Instant QuickReload (fire all reload remotes)
--- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, F5=QuickReload toggle, LeftAlt=Toggle UI/HUD, R=QuickReload
+-- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
 --Credit to RiiK @RiiK26--
 
 -- Ensure game loaded
@@ -98,8 +42,6 @@ local FEATURE = {
     Aimbot = false,
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
-    QuickReload = false,
-    ReloadDelay = 0.05, -- very small delay for instant feel
 }
 
 -- ==========
@@ -127,7 +69,7 @@ local function safeWaitCamera()
 end
 
 local function findMaxAmmoFromTool(tool)
-    -- try to find explicit max ammo fields
+    -- try to find explicit max ammo fields (kept as helper in case needed elsewhere)
     local candidates = {"MaxAmmo", "Max", "Capacity", "MagazineSize", "ClipSize"}
     for _,name in ipairs(candidates) do
         local v = tool:FindFirstChild(name, true)
@@ -135,7 +77,6 @@ local function findMaxAmmoFromTool(tool)
             return tonumber(v.Value)
         end
     end
-    -- fallback: look for any NumberValue descendant with 'max'/'cap'/'mag' in name
     for _,v in ipairs(tool:GetDescendants()) do
         if (v:IsA("NumberValue") or v:IsA("IntValue")) then
             local n = v.Name:lower()
@@ -144,7 +85,6 @@ local function findMaxAmmoFromTool(tool)
             end
         end
     end
-    -- final fallback: common default
     return 30
 end
 
@@ -227,7 +167,7 @@ end)
 
 -- HUD
 local HUDGui = Instance.new("ScreenGui")
-HUDGui.Name = "TPB_TycoonHUD_FINAL"
+HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
 safeParentGui(HUDGui)
 
@@ -262,7 +202,7 @@ hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
-hudAdd("Quick Reload")
+-- Quick Reload removed from HUD
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -271,105 +211,11 @@ local function updateHUD(name, state)
     end
 end
 
--- LeftAlt toggle UI/HUD (kept separate to avoid interfering)
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
         MainFrame.Visible = not MainFrame.Visible
         HUD.Visible = not MainFrame.Visible
-    end
-end)
-
--- ==========
--- Quick Reload (manual + instant auto loop will use FEATURE.QuickReload)
--- Inserted here so updateHUD and UI exist
--- ==========
--- tabel max ammo per senjata
-local MaxAmmo = {
-    SMG = 30,
-    Sniper = 1,
-    Railgun = 3,
-}
-
--- fungsi deteksi tool & ammo value (gunakan LocalPlayer)
-local function getCurrentToolAmmo()
-    local char = LocalPlayer.Character or workspace:FindFirstChild(LocalPlayer.Name)
-    if not char then return end
-
-    for _, tool in ipairs(char:GetChildren()) do
-        local ammo = tool:FindFirstChild("Ammo")
-        if ammo and ammo:IsA("NumberValue") then
-            return tool, ammo
-        end
-    end
-end
-
--- fungsi kirim semua RemoteEvent di Tool yang berisi kata 'reload'
-local function fireAllReloadRemotes(tool)
-    if not tool then return end
-    for _, obj in ipairs(tool:GetDescendants()) do
-        if obj:IsA("RemoteEvent") and string.find(obj.Name:lower(), "reload") then
-            pcall(function() obj:FireServer() end)
-            print("📡 FireServer ke Remote:", obj:GetFullName())
-        end
-    end
-    -- juga cek direct children (in case name exactly 'Reload')
-    for _, obj in ipairs(tool:GetChildren()) do
-        if obj:IsA("RemoteEvent") and string.find(obj.Name:lower(), "reload") then
-            pcall(function() obj:FireServer() end)
-            print("📡 FireServer ke Remote:", obj:GetFullName())
-        end
-    end
-end
-
--- fungsi quick reload manual (R)
-local function quickReloadManual()
-    local tool, ammo = getCurrentToolAmmo()
-    if tool and ammo then
-        local max = MaxAmmo[tool.Name] or findMaxAmmoFromTool(tool)
-        if max then
-            pcall(function() ammo.Value = max end)
-            print("⚡ QuickReload manual:", tool.Name, "->", ammo.Value)
-
-            -- kirim semua remote reload yang relevan agar server unlock reload
-            pcall(function() fireAllReloadRemotes(tool) end)
-        end
-    end
-end
-
--- fungsi stop animasi reload
-local function stopReloadAnimation()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local humanoid = char:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-
-    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-        local anim = track.Animation
-        if anim and string.lower(anim.Name):find("reload") then
-            pcall(function() track:Stop() end)
-            print("🛑 Reload animation dibatalkan:", anim.Name)
-        end
-    end
-end
-
--- hook input: F5 toggle (sync ke FEATURE & HUD), R for manual reload
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-
-    if input.KeyCode == Enum.KeyCode.F5 then
-        FEATURE.QuickReload = not FEATURE.QuickReload
-        updateHUD("Quick Reload", FEATURE.QuickReload)
-        print("🔀 QuickReload:", FEATURE.QuickReload and "ON" or "OFF")
-        if FEATURE.QuickReload then
-            -- start the instant reload loop (the function defined later will check FEATURE.QuickReload)
-            pcall(function() instantReloadLoop() end)
-        end
-    end
-
-    if FEATURE.QuickReload and input.KeyCode == Enum.KeyCode.R then
-        quickReloadManual()
-        stopReloadAnimation()
     end
 end)
 
@@ -604,92 +450,3 @@ RunService.RenderStepped:Connect(function()
         end
     end
     if best then
-        local dir = (best.Position - Camera.CFrame.Position).Unit
-        local newLook = Camera.CFrame.LookVector:Lerp(dir, FEATURE.AIM_LERP)
-        local pos = Camera.CFrame.Position
-        Camera.CFrame = CFrame.new(pos, pos + newLook)
-    end
-end)
-
--- ==========
--- Instant Quick Reload (final) — uses fireAllReloadRemotes as fallback
--- ==========
-local function instantReloadLoop()
-    task.spawn(function()
-        while FEATURE.QuickReload do
-            pcall(function()
-                local char = LocalPlayer.Character
-                if not char then return end
-                local tool = char:FindFirstChildOfClass("Tool")
-                if not tool then return end
-
-                local ammo = tool:FindFirstChild("Ammo")
-                -- local reloadRemote = tool:FindFirstChild("Reload") -- no longer required; using fireAllReloadRemotes
-
-                if ammo and ammo:IsA("NumberValue") then
-                    if ammo.Value <= 0 then
-                        local maxAmmo = findMaxAmmoFromTool(tool) or 30
-                        -- set client-side ammo instantly (cancel animasi reload)
-                        pcall(function() ammo.Value = maxAmmo end)
-
-                        -- call remote(s) to sync server-side reload if available (call any reload-like RemoteEvent)
-                        pcall(function() fireAllReloadRemotes(tool) end)
-
-                        -- small delay to avoid tight spam
-                        task.wait(FEATURE.ReloadDelay or 0.05)
-                    end
-                end
-            end)
-            task.wait(0.04)
-        end
-    end)
-end
-
--- ==========
--- Register Toggles
--- ==========
-registerToggle("ESP", "ESP", function(state)
-    if state then enableESP() else disableESP() end
-end)
-registerToggle("Auto Press E", "AutoE", function(state)
-    if state then startAutoE() end
-end)
-registerToggle("WalkSpeed", "WalkEnabled")
-registerToggle("Aimbot", "Aimbot")
-registerToggle("Quick Reload", "QuickReload", function(state)
-    if state then instantReloadLoop() end
-end)
-
--- ==========
--- Hotkeys (kept for backwards compatibility)
--- ==========
-UIS.InputBegan:Connect(function(input,gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.F1 then
-        ToggleCallbacks.ESP(not FEATURE.ESP)
-    elseif input.KeyCode == Enum.KeyCode.F2 then
-        ToggleCallbacks.AutoE(not FEATURE.AutoE)
-    elseif input.KeyCode == Enum.KeyCode.F3 then
-        ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 then
-        ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
-    elseif input.KeyCode == Enum.KeyCode.F5 then
-        ToggleCallbacks.QuickReload(not FEATURE.QuickReload)
-    end
-end)
-
--- ==========
--- Cleanup on unload / character remove
--- ==========
-Players.PlayerRemoving:Connect(function(p)
-    if espObjects[p] then clearESP(p) end
-end)
-
-LocalPlayer.CharacterRemoving:Connect(function()
-    -- Clear local esp objects on respawn
-    for p,_ in pairs(espObjects) do
-        clearESP(p)
-    end
-end)
-
--- End of script
