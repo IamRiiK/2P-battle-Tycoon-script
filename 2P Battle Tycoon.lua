@@ -1,7 +1,8 @@
--- 2P Battle Tycoon — Full Fixed Script (Final v3)
--- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
+-- 2P Battle Tycoon — Full Fixed Script (Stabilized)
+-- Perbaikan: cleanup koneksi, optimise loops, safer GUI parenting, aimbot guard, ESP culling, drag replacement
+-- Features kept: Dark UI + HUD + ESP (Highlight) + AutoE + WalkSpeed + Aimbot
 -- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
---Credit to RiiK @RiiK26--
+-- Credit: adapted from original (RiiK @RiiK26), patched for stability
 
 -- Ensure game loaded
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -44,14 +45,48 @@ local FEATURE = {
     AIM_LERP = 0.4,
 }
 
+-- performance / safety params
+local MAX_ESP_DISTANCE = 250 -- studs, cull ESP beyond this
+local WALK_UPDATE_INTERVAL = 0.12 -- seconds, throttle walk speed writes
+
+-- ==========
+-- Connection management
+-- ==========
+local Connections = {}
+local function keep(conn)
+    if conn and type(conn) == "table" and conn.Disconnect then
+        table.insert(Connections, conn)
+        return conn
+    elseif conn and type(conn) == "userdata" and conn.Disconnect then
+        table.insert(Connections, conn)
+        return conn
+    end
+    return conn
+end
+local function clearConnections()
+    for _, c in ipairs(Connections) do
+        pcall(function() c:Disconnect() end)
+    end
+    Connections = {}
+end
+
+-- cleanup when leaving
+Players.PlayerRemoving:Connect(function(p)
+    -- not storing per-player conns here; Character removal handles local cleanup below
+end)
+
 -- ==========
 -- Helpers
 -- ==========
 local function safeParentGui(gui)
+    -- prefer PlayerGui, avoid CoreGui fallback that may be restricted
     gui.ResetOnSpawn = false
-    local ok = pcall(function() gui.Parent = PlayerGui end)
-    if not ok then
-        pcall(function() gui.Parent = game:GetService("CoreGui") end)
+    if PlayerGui and PlayerGui.Parent then
+        gui.Parent = PlayerGui
+    else
+        -- as a last resort attach to StarterGui (visible after spawn)
+        pcall(function() game:GetService("StarterGui"):SetCore("ToastNotification",{Title="TPB", Text="GUI failed to attach to PlayerGui."}) end)
+        gui.Parent = PlayerGui
     end
 end
 
@@ -69,7 +104,8 @@ local function safeWaitCamera()
 end
 
 local function findMaxAmmoFromTool(tool)
-    -- try to find explicit max ammo fields (kept as helper in case needed elsewhere)
+    if not tool then return 30 end
+    -- try direct mapping if present as attribute or field
     local candidates = {"MaxAmmo", "Max", "Capacity", "MagazineSize", "ClipSize"}
     for _,name in ipairs(candidates) do
         local v = tool:FindFirstChild(name, true)
@@ -77,6 +113,7 @@ local function findMaxAmmoFromTool(tool)
             return tonumber(v.Value)
         end
     end
+    -- fallback: scan for a descendant with 'max'/'mag' in name
     for _,v in ipairs(tool:GetDescendants()) do
         if (v:IsA("NumberValue") or v:IsA("IntValue")) then
             local n = v.Name:lower()
@@ -85,8 +122,17 @@ local function findMaxAmmoFromTool(tool)
             end
         end
     end
+    -- last resort: reasonable default
     return 30
 end
+
+-- ensure no duplicate GUIs from re-run
+pcall(function()
+    local old = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
+    if old then old:Destroy() end
+    local old2 = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
+    if old2 then old2:Destroy() end
+end)
 
 -- ==========
 -- Build UI
@@ -96,61 +142,100 @@ ScreenGui.Name = "TPB_TycoonGUI_Final"
 ScreenGui.DisplayOrder = 9999
 safeParentGui(ScreenGui)
 
-local MainFrame = Instance.new("Frame", ScreenGui)
+local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0,360,0,460)
 MainFrame.Position = UDim2.new(0.28,0,0.18,0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
 
-local TitleBar = Instance.new("Frame", MainFrame)
-TitleBar.Size = UDim2.new(1,0,0,40)
-TitleBar.BackgroundColor3 = Color3.fromRGB(42,42,45)
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0,12)
+-- Implement drag without deprecated Draggable
+do
+    local dragging = false
+    local dragStart = Vector2.new()
+    local startPos = UDim2.new()
+    local top = Instance.new("Frame", MainFrame)
+    top.Name = "DragTitle"
+    top.Size = UDim2.new(1,0,0,40)
+    top.Position = UDim2.new(0,0,0,0)
+    top.BackgroundTransparency = 1
 
-local DragHandle = Instance.new("TextLabel", TitleBar)
-DragHandle.Size = UDim2.new(0,28,0,28)
-DragHandle.Position = UDim2.new(0,8,0,6)
-DragHandle.BackgroundTransparency = 1
-DragHandle.Font = Enum.Font.Gotham
-DragHandle.TextSize = 20
-DragHandle.TextColor3 = Color3.fromRGB(200,200,200)
-DragHandle.Text = "≡"
+    local function onInputBegan(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end
+    local function onInputChanged(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end
+    keep(top.InputBegan:Connect(onInputBegan))
+    keep(UIS.InputChanged:Connect(onInputChanged))
 
-local Title = Instance.new("TextLabel", TitleBar)
-Title.Size = UDim2.new(0.6,0,1,0)
-Title.Position = UDim2.new(0.07,0,0,0)
-Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 18
-Title.TextColor3 = Color3.fromRGB(245,245,245)
-Title.Text = "⚔️ 2P Battle Tycoon"
-Title.TextXAlignment = Enum.TextXAlignment.Left
+    -- TitleBar elements on top
+    local TitleBar = Instance.new("Frame", MainFrame)
+    TitleBar.Size = UDim2.new(1,0,0,40)
+    TitleBar.BackgroundTransparency = 1
+    local DragHandle = Instance.new("TextLabel", TitleBar)
+    DragHandle.Size = UDim2.new(0,28,0,28)
+    DragHandle.Position = UDim2.new(0,8,0,6)
+    DragHandle.BackgroundTransparency = 1
+    DragHandle.Font = Enum.Font.Gotham
+    DragHandle.TextSize = 20
+    DragHandle.TextColor3 = Color3.fromRGB(200,200,200)
+    DragHandle.Text = "≡"
 
-local HintLabel = Instance.new("TextLabel", TitleBar)
-HintLabel.Size = UDim2.new(0.36,-60,1,0)
-HintLabel.Position = UDim2.new(0.64,0,0,0)
-HintLabel.BackgroundTransparency = 1
-HintLabel.Font = Enum.Font.Gotham
-HintLabel.TextSize = 12
-HintLabel.TextColor3 = Color3.fromRGB(170,170,170)
-HintLabel.Text = "LeftAlt = Hide UI"
-HintLabel.TextXAlignment = Enum.TextXAlignment.Right
+    local Title = Instance.new("TextLabel", TitleBar)
+    Title.Size = UDim2.new(0.6,0,1,0)
+    Title.Position = UDim2.new(0.07,0,0,0)
+    Title.BackgroundTransparency = 1
+    Title.Font = Enum.Font.GothamBold
+    Title.TextSize = 18
+    Title.TextColor3 = Color3.fromRGB(245,245,245)
+    Title.Text = "⚔️ 2P Battle Tycoon"
+    Title.TextXAlignment = Enum.TextXAlignment.Left
 
-local MinBtn = Instance.new("TextButton", TitleBar)
-MinBtn.Size = UDim2.new(0,38,0,28)
-MinBtn.Position = UDim2.new(1,-46,0,6)
-MinBtn.BackgroundColor3 = Color3.fromRGB(58,58,60)
-MinBtn.Font = Enum.Font.GothamBold
-MinBtn.TextSize = 20
-MinBtn.TextColor3 = Color3.fromRGB(240,240,240)
-MinBtn.Text = "-"
-Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,8)
+    local HintLabel = Instance.new("TextLabel", TitleBar)
+    HintLabel.Size = UDim2.new(0.36,-60,1,0)
+    HintLabel.Position = UDim2.new(0.64,0,0,0)
+    HintLabel.BackgroundTransparency = 1
+    HintLabel.Font = Enum.Font.Gotham
+    HintLabel.TextSize = 12
+    HintLabel.TextColor3 = Color3.fromRGB(170,170,170)
+    HintLabel.Text = "LeftAlt = Hide UI"
+    HintLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+    local MinBtn = Instance.new("TextButton", TitleBar)
+    MinBtn.Size = UDim2.new(0,38,0,28)
+    MinBtn.Position = UDim2.new(1,-46,0,6)
+    MinBtn.BackgroundColor3 = Color3.fromRGB(58,58,60)
+    MinBtn.Font = Enum.Font.GothamBold
+    MinBtn.TextSize = 20
+    MinBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    MinBtn.Text = "-"
+    Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,8)
+    MinBtn.MouseButton1Click:Connect(function()
+        local content = MainFrame:FindFirstChild("Content")
+        if content then
+            content.Visible = not content.Visible
+            MinBtn.Text = content.Visible and "-" or "+"
+        end
+    end)
+end
 
 local Content = Instance.new("Frame", MainFrame)
+Content.Name = "Content"
 Content.Size = UDim2.new(1,-16,1,-56)
 Content.Position = UDim2.new(0,8,0,48)
 Content.BackgroundTransparency = 1
@@ -159,11 +244,6 @@ local UIList = Instance.new("UIListLayout", Content)
 UIList.Padding = UDim.new(0,12)
 
 local minimized = false
-MinBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    Content.Visible = not minimized
-    MinBtn.Text = minimized and "+" or "-"
-end)
 
 -- HUD
 local HUDGui = Instance.new("ScreenGui")
@@ -195,6 +275,7 @@ local function hudAdd(name)
     l.TextColor3 = Color3.fromRGB(220,220,220)
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.Text = name .. ": OFF"
+    l.Parent = HUD
     hudLabels[name] = l
 end
 
@@ -202,7 +283,6 @@ hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
--- Quick Reload removed from HUD
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -211,13 +291,13 @@ local function updateHUD(name, state)
     end
 end
 
-UIS.InputBegan:Connect(function(input, gp)
+keep(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
         MainFrame.Visible = not MainFrame.Visible
         HUD.Visible = not MainFrame.Visible
     end
-end)
+end))
 
 -- ==========
 -- Toggle helper
@@ -236,6 +316,7 @@ local function registerToggle(displayName, featureKey, onChange)
     btn.TextSize = 15
     btn.Text = displayName .. " [OFF]"
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+    btn.Parent = Content
 
     local function setState(state)
         FEATURE[featureKey] = state
@@ -243,7 +324,8 @@ local function registerToggle(displayName, featureKey, onChange)
         btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
         updateHUD(displayName, state)
         if type(onChange) == "function" then
-            pcall(onChange, state)
+            local ok, err = pcall(onChange, state)
+            if not ok then warn("Toggle callback error:", err) end
         end
     end
 
@@ -273,6 +355,7 @@ do
     local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,40)
     frame.BackgroundTransparency = 1
+    frame.Parent = Content
 
     local label = Instance.new("TextLabel", frame)
     label.Size = UDim2.new(0.55,-8,1,0)
@@ -293,6 +376,7 @@ do
     box.Text = tostring(FEATURE.WalkValue)
     box.PlaceholderText = "16–200 (rec 25-40)"
     Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+    box.Parent = frame
 
     box.FocusLost:Connect(function(enter)
         if enter then
@@ -308,14 +392,15 @@ do
 end
 
 -- ==========
--- ESP System (Box ESP dengan Highlight)
+-- ESP System (Highlight) with distance culling
 -- ==========
 local espObjects = {}
+local MAX_ESP_DIST_SQ = MAX_ESP_DISTANCE * MAX_ESP_DISTANCE
 
 local function clearESP(p)
     if espObjects[p] then
         for _,v in pairs(espObjects[p]) do
-            if v and v.Parent then v:Destroy() end
+            if v and v.Parent then pcall(function() v:Destroy() end) end
         end
         espObjects[p] = nil
     end
@@ -326,23 +411,29 @@ local function createESP(p)
     if not p.Character then return end
     local root = p.Character:FindFirstChild("HumanoidRootPart")
     if not root then return end
+    safeWaitCamera()
+    if not Camera or not Camera.CFrame then return end
+    local camPos = Camera.CFrame.Position
+    if (root.Position - camPos).Magnitude^2 > MAX_ESP_DIST_SQ then
+        return
+    end
 
     local hl = Instance.new("Highlight")
     hl.Name = "BoxESP"
     hl.Adornee = p.Character
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.Occluded -- prefer occluded for less intrusive display
+    hl.OutlineTransparency = 0.4
     hl.OutlineColor = Color3.fromRGB(255,255,255)
-    hl.FillTransparency = 0.25
+    hl.FillTransparency = 0.65
 
     if p.Team and LocalPlayer.Team then
         if p.Team == LocalPlayer.Team then
-            hl.FillColor = Color3.fromRGB(0,255,0)
+            hl.FillColor = Color3.fromRGB(0,200,0)
         else
-            hl.FillColor = Color3.fromRGB(255,0,0)
+            hl.FillColor = Color3.fromRGB(200,40,40)
         end
     else
-        hl.FillColor = Color3.fromRGB(255,255,0)
+        hl.FillColor = Color3.fromRGB(255,215,0)
     end
 
     hl.Parent = p.Character
@@ -358,48 +449,57 @@ local function refreshESPForPlayer(p)
 end
 
 local function enableESP()
+    -- cleanup any existing first to avoid duplicates
+    for p,_ in pairs(espObjects) do clearESP(p) end
+
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
-            p.CharacterAdded:Connect(function()
+            local conn = p.CharacterAdded:Connect(function()
                 task.wait(0.5)
                 refreshESPForPlayer(p)
             end)
+            keep(conn)
         end
     end
-    Players.PlayerAdded:Connect(function(p)
+
+    local addedConn = Players.PlayerAdded:Connect(function(p)
         if p ~= LocalPlayer then
-            p.CharacterAdded:Connect(function()
+            local conn1 = p.CharacterAdded:Connect(function()
                 task.wait(0.5)
                 refreshESPForPlayer(p)
             end)
+            keep(conn1)
             refreshESPForPlayer(p)
         end
     end)
-    Players.PlayerRemoving:Connect(function(p)
+    keep(addedConn)
+
+    local remConn = Players.PlayerRemoving:Connect(function(p)
         clearESP(p)
     end)
+    keep(remConn)
 end
 
 local function disableESP()
-    for p,_ in pairs(espObjects) do
-        clearESP(p)
-    end
+    for p,_ in pairs(espObjects) do clearESP(p) end
 end
 
 -- ==========
--- Auto Press E
+-- Auto Press E (safe fallback if VIM not found)
 -- ==========
 local autoEThread = nil
 local function startAutoE()
     if autoEThread then return end
+    if not VIM then
+        warn("AutoE: VirtualInputManager not available in this environment. AutoE will be disabled.")
+        return
+    end
     autoEThread = task.spawn(function()
         while FEATURE.AutoE do
             pcall(function()
-                if VIM then
-                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                end
+                VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
             end)
             task.wait(math.clamp(FEATURE.AutoEInterval or 0.5, 0.05, 5))
         end
@@ -408,20 +508,27 @@ local function startAutoE()
 end
 
 -- ==========
--- Walk Speed
+-- Walk Speed (optimized: only set when changed)
 -- ==========
-RunService.Heartbeat:Connect(function()
-    if FEATURE.WalkEnabled then
+do
+    local lastSet = 0
+    local lastVal = nil
+    keep(RunService.Heartbeat:Connect(function(dt)
+        if not FEATURE.WalkEnabled then return end
+        lastSet = lastSet + dt
+        if lastSet < WALK_UPDATE_INTERVAL then return end
+        lastSet = 0
         pcall(function()
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-                LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = FEATURE.WalkValue
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and hum.WalkSpeed ~= FEATURE.WalkValue then
+                hum.WalkSpeed = FEATURE.WalkValue
             end
         end)
-    end
-end)
+    end))
+end
 
 -- ==========
--- Aimbot
+-- Aimbot (safer: guarded & smooth CFrame Lerp)
 -- ==========
 local function angleTo(a, b)
     local dot = a:Dot(b)
@@ -430,10 +537,13 @@ local function angleTo(a, b)
     return math.deg(math.acos(val))
 end
 
-RunService.RenderStepped:Connect(function()
+keep(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     safeWaitCamera()
     if not Camera then return end
+
+    -- safety guard: don't aim while typing in textbox / chatting
+    if UIS:GetFocusedTextBox() then return end
 
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not root then return end
@@ -442,8 +552,8 @@ RunService.RenderStepped:Connect(function()
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Team and LocalPlayer.Team and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") then
             local head = p.Character.Head
-            local dir = (head.Position - Camera.CFrame.Position).Unit
-            local ang = angleTo(Camera.CFrame.LookVector, dir)
+            local dir = (head.Position - Camera.CFrame.Position)
+            local ang = angleTo(Camera.CFrame.LookVector, dir.Unit)
             if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
                 best, bestAngle = head, ang
             end
@@ -451,11 +561,14 @@ RunService.RenderStepped:Connect(function()
     end
     if best then
         local dir = (best.Position - Camera.CFrame.Position).Unit
-        local newLook = Camera.CFrame.LookVector:Lerp(dir, FEATURE.AIM_LERP)
+        local currentLook = Camera.CFrame.LookVector
+        local blended = currentLook:Lerp(dir, math.clamp(FEATURE.AIM_LERP, 0, 1))
         local pos = Camera.CFrame.Position
-        Camera.CFrame = CFrame.new(pos, pos + newLook)
+        -- use CFrame:Lerp for smoother transition
+        local targetCFrame = CFrame.new(pos, pos + blended)
+        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(FEATURE.AIM_LERP, 0.05, 0.9))
     end
-end)
+end))
 
 -- ==========
 -- Register Toggles
@@ -468,12 +581,12 @@ registerToggle("Auto Press E", "AutoE", function(state)
 end)
 registerToggle("WalkSpeed", "WalkEnabled")
 registerToggle("Aimbot", "Aimbot")
--- Quick Reload toggle removed
+-- Quick Reload intentionally removed
 
 -- ==========
--- Hotkeys
+-- Hotkeys (kept for backwards compatibility)
 -- ==========
-UIS.InputBegan:Connect(function(input,gp)
+keep(UIS.InputBegan:Connect(function(input,gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F1 then
         ToggleCallbacks.ESP(not FEATURE.ESP)
@@ -484,20 +597,29 @@ UIS.InputBegan:Connect(function(input,gp)
     elseif input.KeyCode == Enum.KeyCode.F4 then
         ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
     end
-end)
+end))
 
 -- ==========
 -- Cleanup on unload / character remove
 -- ==========
-Players.PlayerRemoving:Connect(function(p)
-    if espObjects[p] then clearESP(p) end
-end)
+-- clear ESP and disconnect connections when local character removed
+keep(LocalPlayer.CharacterRemoving:Connect(function()
+    for p,_ in pairs(espObjects) do clearESP(p) end
+    clearConnections()
+end))
 
-LocalPlayer.CharacterRemoving:Connect(function()
-    -- Clear local esp objects on respawn
-    for p,_ in pairs(espObjects) do
-        clearESP(p)
+-- Also clear on module/script unload if your executor supports _G flag
+if _G then
+    _G.__TPB_CLEANUP = function()
+        for p,_ in pairs(espObjects) do clearESP(p) end
+        clearConnections()
+        pcall(function()
+            local g = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
+            if g then g:Destroy() end
+            local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
+            if gh then gh:Destroy() end
+        end)
     end
-end)
+end
 
--- End of script
+print("✅ TPB script loaded (stabilized). Toggles: F1 ESP, F2 AutoE, F3 Walk, F4 Aimbot. Use UI to toggle features.")
