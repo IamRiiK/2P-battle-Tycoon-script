@@ -1,6 +1,8 @@
--- 2P Battle Tycoon — Full Fixed Script (Patched, cleaned)
--- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot + Infinite Ammo (safe)
--- CREDIT TO: RiiK (RiiK26) -- Cleaned/Fixed by assistant
+-- 2P Battle Tycoon — Full Fixed Script (Patched) with draggable UI
+-- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot
+-- Improvements: fixes to AutoE feedback, robust ESP lifecycle, walkspeed save/restore,
+-- safer camera writes, improved connection tracking, R6/R15 compatibility, and more.
+-- CREDIT TO: RiiK (RiiK26) --
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
@@ -26,7 +28,7 @@ end
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- Config & state (FIXED: proper table entry for InfiniteAmmo)
+-- Config & state
 local FEATURE = {
     ESP = false,
     AutoE = false,
@@ -37,7 +39,6 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false, -- if true, aimbot only while right mouse held
-    InfiniteAmmo = false,
 }
 
 local MAX_ESP_DISTANCE = 250 -- studs
@@ -46,11 +47,13 @@ local WALK_UPDATE_INTERVAL = 0.12 -- seconds
 -- Connection tracking for cleanup
 local Connections = {}
 local function keep(conn)
+    -- store RBXScriptConnection safely
     if conn == nil then return nil end
     local t = typeof(conn)
     if t == "RBXScriptConnection" then
         table.insert(Connections, conn)
     else
+        -- accept any table-like with Disconnect (for compatibility)
         local ok, has = pcall(function() return conn and conn.Disconnect end)
         if ok and has then table.insert(Connections, conn) end
     end
@@ -69,6 +72,7 @@ local function safeParentGui(gui)
     if PlayerGui and PlayerGui.Parent then
         gui.Parent = PlayerGui
     else
+        -- fallback: attempt to parent to PlayerGui again later
         pcall(function() gui.Parent = PlayerGui end)
     end
 end
@@ -111,7 +115,7 @@ MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
 
--- Title / Drag area
+-- Title / Drag area (manual drag, not deprecated Draggable)
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
 TitleBar.BackgroundTransparency = 1
@@ -124,6 +128,8 @@ DragHandle.Font = Enum.Font.Gotham
 DragHandle.TextSize = 20
 DragHandle.TextColor3 = Color3.fromRGB(200,200,200)
 DragHandle.Text = "≡"
+DragHandle.Active = true
+DragHandle.Selectable = true
 
 local Title = Instance.new("TextLabel", TitleBar)
 Title.Size = UDim2.new(0.6,0,1,0)
@@ -170,6 +176,76 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
+-- Make the MainFrame draggable by title bar (mouse & touch)
+do
+    local dragging = false
+    local dragInput = nil
+    local dragStart = nil
+    local startPos = nil
+
+    local function getScreenSize()
+        local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
+        return viewportSize
+    end
+
+    local function onInputBegan(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragInput = input
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            -- capture the input changed event
+            if input.UserInputType == Enum.UserInputType.Touch then
+                -- Touch doesn't fire MouseMovement; rely on InputChanged below (Touch)
+            end
+        end
+    end
+
+    local function onInputChanged(input)
+        if not dragging then return end
+        if input ~= dragInput then return end
+        local delta = input.Position - dragStart
+        -- startPos is a UDim2; convert to pixel offsets then add delta
+        local newX = startPos.X.Offset + delta.X
+        local newY = startPos.Y.Offset + delta.Y
+
+        -- clamp to viewport (prevent moving off-screen)
+        local screen = getScreenSize()
+        local frameSize = Vector2.new(MainFrame.AbsoluteSize.X, MainFrame.AbsoluteSize.Y)
+        newX = math.floor(clamp(newX, 0, math.max(0, screen.X - frameSize.X)))
+        newY = math.floor(clamp(newY, 0, math.max(0, screen.Y - frameSize.Y)))
+
+        MainFrame.Position = UDim2.new(0, newX, 0, newY)
+    end
+
+    local function onInputEnded(input)
+        if input == dragInput then
+            dragging = false
+            dragInput = nil
+        end
+    end
+
+    -- Connect on the TitleBar and DragHandle (allow dragging by either)
+    TitleBar.InputBegan:Connect(function(input)
+        onInputBegan(input)
+    end)
+    DragHandle.InputBegan:Connect(function(input)
+        onInputBegan(input)
+    end)
+
+    -- Important: listen for InputChanged on UserInputService for MouseMovement and Touch
+    keep(UIS.InputChanged:Connect(function(input)
+        -- Mouse movement
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            onInputChanged(input)
+        end
+    end))
+
+    keep(UIS.InputEnded:Connect(function(input)
+        onInputEnded(input)
+    end))
+end
+
 -- HUD
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
@@ -177,7 +253,7 @@ HUDGui.DisplayOrder = 10000
 safeParentGui(HUDGui)
 
 local HUD = Instance.new("Frame", HUDGui)
-HUD.Size = UDim2.new(0,220,0,150)
+HUD.Size = UDim2.new(0,220,0,130)
 HUD.Position = UDim2.new(1,-230,1,-160)
 HUD.BackgroundColor3 = Color3.fromRGB(20,20,20)
 HUD.BackgroundTransparency = 0.06
@@ -208,7 +284,6 @@ hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
-hudAdd("Infinite Ammo")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -260,7 +335,7 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
--- WalkSpeed input
+-- WalkSpeed input (text box)
 do
     local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,40)
@@ -300,7 +375,7 @@ do
     end)
 end
 
--- ESP System
+-- ESP System (Highlight AlwaysOnTop, team colors, distance cull)
 local espObjects = {}
 local MAX_ESP_DIST_SQ = MAX_ESP_DISTANCE * MAX_ESP_DISTANCE
 
@@ -317,9 +392,9 @@ end
 
 local function getESPColor(p)
     if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
-        return Color3.fromRGB(0,200,0)
+        return Color3.fromRGB(0,200,0) -- green for team
     else
-        return Color3.fromRGB(200,40,40)
+        return Color3.fromRGB(200,40,40) -- red for enemy
     end
 end
 
@@ -344,7 +419,7 @@ local function createESPForPlayer(p)
     local hl = Instance.new("Highlight")
     hl.Name = "TPB_BoxESP"
     hl.Adornee = p.Character
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- always visible through walls
     hl.OutlineTransparency = 0
     hl.OutlineColor = Color3.fromRGB(255,255,255)
     hl.FillTransparency = 0.7
@@ -363,25 +438,31 @@ local function refreshESPForPlayer(p)
 end
 
 local function enableESP()
+    -- cleanup existing
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
 
+    -- initial apply and hook CharacterAdded/Removing for each player
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
             if p.Character then
+                -- clear and refresh on character removal
                 keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
             end
             keep(p.CharacterAdded:Connect(function()
                 task.wait(0.5)
                 refreshESPForPlayer(p)
+                -- ensure we clear when character is removed
                 if p.Character then
                     keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
                 end
             end))
+            -- if player changes team, update color
             keep(p:GetPropertyChangedSignal("Team"):Connect(function() refreshESPForPlayer(p) end))
         end
     end
 
+    -- watch for new players
     keep(Players.PlayerAdded:Connect(function(p)
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
@@ -397,6 +478,7 @@ local function enableESP()
         end
     end))
 
+    -- cleanup when players leave
     keep(Players.PlayerRemoving:Connect(function(p) clearESPForPlayer(p) end))
 end
 
@@ -406,6 +488,7 @@ end
 
 -- Auto Press E
 local autoEThread = nil
+local autoEDebounce = false
 local function startAutoE()
     if autoEThread then return end
     if not VIM then
@@ -428,7 +511,9 @@ end
 
 local function stopAutoE()
     FEATURE.AutoE = false
+    -- thread will exit naturally; ensure reference cleared
     if autoEThread then
+        -- wait a short moment for thread to cleanup
         task.spawn(function()
             task.wait(0.2)
             autoEThread = nil
@@ -437,8 +522,16 @@ local function stopAutoE()
     updateHUD("Auto Press E", false)
 end
 
--- WalkSpeed (heartbeat)
+-- WalkSpeed (throttled writes) with save/restore on toggles/respawn
 local originalWalkSpeed = nil
+local function setPlayerWalkSpeed(value)
+    pcall(function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = value end
+    end)
+end
+
+-- heartbeat loop to maintain walkspeed while enabled
 do
     local acc = 0
     keep(RunService.Heartbeat:Connect(function(dt)
@@ -458,6 +551,7 @@ do
     end))
 end
 
+-- restore walk speed on disable or when humanoid removed
 local function restoreWalkSpeed()
     pcall(function()
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -468,7 +562,7 @@ local function restoreWalkSpeed()
     originalWalkSpeed = nil
 end
 
--- Aimbot (RenderStepped)
+-- Aimbot (safe: checks focus, uses Lerp smoothing, aims only when allowed)
 local function angleBetweenVectors(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
@@ -479,6 +573,7 @@ end
 keep(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+    -- don't aim while typing into textboxes
     if UIS:GetFocusedTextBox() then return end
     safeWaitCamera()
     if not Camera then return end
@@ -489,10 +584,11 @@ keep(RunService.RenderStepped:Connect(function()
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             local okTarget = false
+            -- team check: if teams exist, only target other teams
             if p.Team and LocalPlayer.Team then
                 okTarget = (p.Team ~= LocalPlayer.Team)
             else
-                okTarget = true
+                okTarget = true -- no teams set; target anyone else
             end
             if okTarget and p.Character then
                 local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
@@ -515,9 +611,11 @@ keep(RunService.RenderStepped:Connect(function()
             local blended = currentLook:Lerp(dir, clamp(FEATURE.AIM_LERP, 0, 1))
             local pos = Camera.CFrame.Position
             local targetCFrame = CFrame.new(pos, pos + blended)
+            -- set camera gently
             Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, clamp(FEATURE.AIM_LERP, 0.05, 0.9))
         end)
         if not success then
+            -- if camera write fails, disable aimbot to be safe
             warn("Aimbot camera write error:", err)
             FEATURE.Aimbot = false
             updateHUD("Aimbot", false)
@@ -525,188 +623,21 @@ keep(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- === Infinite Ammo Implementation (cleaned & ordered) ===
-local ammoConnections = {}
-local attrConnections = {}
-
-local function disconnectAmmoConnections()
-    for _,c in ipairs(ammoConnections) do
-        pcall(function() c:Disconnect() end)
-    end
-    ammoConnections = {}
-    for _,c in ipairs(attrConnections) do
-        pcall(function() c:Disconnect() end)
-    end
-    attrConnections = {}
-end
-
-local function forceAmmoValue(valObj)
-    pcall(function()
-        if valObj:IsA("IntValue") or valObj:IsA("NumberValue") then
-            valObj.Value = 9999 -- use large finite number (safer than math.huge)
-        end
-    end)
-end
-
-local function setupGun(gun)
-    if not FEATURE.InfiniteAmmo then return end
-
-    -- Lock Ammo NumberValue if present
-    local ammo = gun:FindFirstChild("Ammo")
-    if ammo and ammo:IsA("NumberValue") then
-        forceAmmoValue(ammo)
-        local conn = ammo.Changed:Connect(function()
-            if FEATURE.InfiniteAmmo then
-                pcall(function() ammo.Value = 9999 end)
-            end
-        end)
-        table.insert(ammoConnections, conn)
-    end
-
-    -- Set MaxAmmo attribute if present
-    pcall(function()
-        if gun.GetAttribute and gun.SetAttribute and gun:GetAttribute("MaxAmmo") ~= nil then
-            gun:SetAttribute("MaxAmmo", 9999)
-        end
-    end)
-
-    -- Keep Reloading attribute false if present
-    if gun.GetAttribute and gun.SetAttribute then
-        if gun:GetAttribute("Reloading") ~= nil then
-            gun:SetAttribute("Reloading", false)
-            local conn = gun.AttributeChanged:Connect(function(attr)
-                if FEATURE.InfiniteAmmo and attr == "Reloading" then
-                    pcall(function() gun:SetAttribute("Reloading", false) end)
-                end
-            end)
-            table.insert(attrConnections, conn)
-        end
-    end
-end
-
--- Safe namecall hook for blocking "reload" remotes (best-effort)
-local originalNamecall = nil
-local hook_ok = false
-local function tryHookNamecall()
-    -- Only try if hookmetamethod exists
-    if type(hookmetamethod) ~= "function" then return false end
-    local ok, ret = pcall(function()
-        originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            -- avoid intercepting our own calls
-            if not checkcaller and not pcall(function() return checkcaller() end) then
-                -- if checkcaller not available, still proceed carefully
-            end
-            local isLocal = false
-            pcall(function() isLocal = checkcaller() end)
-            if isLocal then
-                return originalNamecall(self, ...)
-            end
-
-            local method = getnamecallmethod and getnamecallmethod() or ""
-            if FEATURE.InfiniteAmmo and method == "FireServer" then
-                -- inspect Instance type and name safely
-                local okClass, className = pcall(function() return self.ClassName end)
-                local okName, nm = pcall(function() return tostring(self.Name) end)
-                local lowerName = (okName and nm or ""):lower()
-                if okClass and (className == "RemoteEvent" or className == "RemoteFunction") then
-                    -- only block remotes that look like reloads
-                    if lowerName:find("reload") then
-                        -- block by returning nil (best-effort)
-                        return nil
-                    end
-                else
-                    -- fallback: if tostring(self) contains 'reload' (rare), block
-                    if lowerName:find("reload") then
-                        return nil
-                    end
-                end
-            end
-            return originalNamecall(self, ...)
-        end)
-    end)
-    hook_ok = ok and (originalNamecall ~= nil)
-    return hook_ok
-end
-
--- start/stop infinite ammo helpers
-local infiniteLoopConn = nil
-local function startInfiniteAmmo()
-    if infiniteLoopConn then return end
-    -- initial apply to existing tools in Character & Backpack
-    pcall(function()
-        if LocalPlayer.Character then
-            for _,obj in ipairs(LocalPlayer.Character:GetChildren()) do
-                if obj:IsA("Tool") then setupGun(obj) end
-            end
-        end
-        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-        if backpack then
-            for _,obj in ipairs(backpack:GetChildren()) do
-                if obj:IsA("Tool") then setupGun(obj) end
-            end
-        end
-    end)
-
-    -- watch for new tools
-    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
-    if backpack then
-        keep(backpack.ChildAdded:Connect(function(c)
-            if c:IsA("Tool") then
-                task.wait(0.12)
-                setupGun(c)
-            end
-        end))
-    end
-    keep(LocalPlayer.CharacterAdded:Connect(function(char)
-        task.wait(0.5)
-        -- apply to new tools
-        for _,obj in ipairs(char:GetChildren()) do
-            if obj:IsA("Tool") then setupGun(obj) end
-        end
-        keep(char.ChildAdded:Connect(function(c)
-            if c:IsA("Tool") then
-                task.wait(0.12)
-                setupGun(c)
-            end
-        end))
-    end))
-
-    -- periodic re-scan in case game recreates values
-    infiniteLoopConn = keep(RunService.Heartbeat:Connect(function()
-        if not FEATURE.InfiniteAmmo then return end
-        pcall(function()
-            if LocalPlayer.Character then
-                for _,obj in ipairs(LocalPlayer.Character:GetChildren()) do
-                    if obj:IsA("Tool") then setupGun(obj) end
-                end
-            end
-        end)
-    end))
-
-    -- attempt hook (best-effort)
-    tryHookNamecall()
-end
-
-local function stopInfiniteAmmo()
-    FEATURE.InfiniteAmmo = false
-    disconnectAmmoConnections()
-    if infiniteLoopConn then
-        pcall(function() infiniteLoopConn:Disconnect() end)
-        infiniteLoopConn = nil
-    end
-    updateHUD("Infinite Ammo", false)
-    -- note: cannot always reliably unhook namecall in all executors; the hook checks FEATURE flag
-end
-
 -- Register Toggles (UI + callbacks)
 registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
 end)
 registerToggle("Auto Press E", "AutoE", function(state)
-    if state then startAutoE() else stopAutoE() end
+    if state then
+        startAutoE()
+    else
+        stopAutoE()
+    end
 end)
 registerToggle("WalkSpeed", "WalkEnabled", function(state)
     if state then
+        -- when enabling, we start enforcing walk speed in heartbeat loop
+        -- store original if possible
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum and not originalWalkSpeed then originalWalkSpeed = hum.WalkSpeed end
@@ -716,15 +647,8 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 registerToggle("Aimbot", "Aimbot", function(state)
-    -- nothing special on toggle
-end)
-registerToggle("Infinite Ammo", "InfiniteAmmo", function(state)
-    if state then
-        FEATURE.InfiniteAmmo = true
-        startInfiniteAmmo()
-        updateHUD("Infinite Ammo", true)
-    else
-        stopInfiniteAmmo()
+    if not state then
+        -- nothing special; RenderStepped loop will stop acting
     end
 end)
 
@@ -735,11 +659,10 @@ for k,_ in pairs(FEATURE) do
     if k == "AutoE" then display = "Auto Press E" end
     if k == "WalkEnabled" then display = "WalkSpeed" end
     if k == "Aimbot" then display = "Aimbot" end
-    if k == "InfiniteAmmo" then display = "Infinite Ammo" end
     if display then updateHUD(display, FEATURE[k]) end
 end
 
--- Hotkeys (F1-F5)
+-- Hotkeys (F1-F4)
 keep(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then
@@ -750,21 +673,22 @@ keep(UIS.InputBegan:Connect(function(input, gp)
         ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
     elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then
         ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
-    elseif input.KeyCode == Enum.KeyCode.F5 and ToggleCallbacks.InfiniteAmmo then
-        ToggleCallbacks.InfiniteAmmo(not FEATURE.InfiniteAmmo)
     end
 end))
 
 -- Cleanup (character remove & global)
 keep(LocalPlayer.CharacterRemoving:Connect(function()
+    -- clear ESP highlights
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-    -- do not fully clear global listeners here; only stop feature-specific things
+    -- disconnect tracked connections
+    clearConnections()
+    -- restore walk speed
     restoreWalkSpeed()
+    -- stop AutoE
     stopAutoE()
-    stopInfiniteAmmo()
 end))
 
--- Ensure we restore walk speed and reapply infinite ammo on respawn
+-- Ensure we restore walk speed on respawn as well
 keep(LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     if FEATURE.WalkEnabled then
@@ -772,12 +696,6 @@ keep(LocalPlayer.CharacterAdded:Connect(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum and originalWalkSpeed == nil then originalWalkSpeed = hum.WalkSpeed end
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
-        end)
-    end
-    if FEATURE.InfiniteAmmo then
-        task.spawn(function()
-            task.wait(0.5)
-            startInfiniteAmmo()
         end)
     end
 end))
@@ -793,10 +711,10 @@ if _G then
             local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
             if gh then gh:Destroy() end
         end)
+        -- restore walk speed and stop autoE
         restoreWalkSpeed()
         stopAutoE()
-        stopInfiniteAmmo()
     end
 end
 
-print("✅ TPB Full Script loaded (Clean). Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot, F5=InfiniteAmmo. LeftAlt toggles UI/HUD.")
+print("✅ TPB Full Script loaded (Patched). Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI can now be dragged.")
