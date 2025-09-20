@@ -2,6 +2,7 @@
 -- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot
 -- Improvements: fixes to AutoE feedback, robust ESP lifecycle, walkspeed save/restore,
 -- safer camera writes, improved connection tracking, R6/R15 compatibility, and more.
+-- CREDIT TO: RiiK (RiiK26) --
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
