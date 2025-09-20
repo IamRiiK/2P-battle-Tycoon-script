@@ -39,7 +39,7 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false, -- if true, aimbot only while right mouse held
-    FEATURE.InfiniteAmmo = false
+    InfiniteAmmo = false
 }
 
 local MAX_ESP_DISTANCE = 250 -- studs
