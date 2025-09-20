@@ -3,7 +3,7 @@
 -- Fixes applied: per-player connection mapping, drag connection leak fix,
 -- walkspeed saved per-character, improved ESP lifecycle, safer camera writes,
 -- AutoE cleanup simplification, weak-key esp table, humanoid health checks
--- CREDIT: RiiK (RiiK26) — patched by assistant
+-- CREDIT: RiiK (RiiK26) —
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
