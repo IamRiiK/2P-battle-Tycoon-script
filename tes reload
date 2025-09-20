@@ -1,0 +1,49 @@
+-- Diagnostic: cari nilai/remote terkait "ammo" atau "reload"
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local function safePrint(s) pcall(function() print(s) end) end
+
+local function inspectContainer(container, scopeName, results)
+    for _,v in ipairs(container:GetDescendants()) do
+        local n = v.Name:lower()
+        if v:IsA("NumberValue") or v:IsA("IntValue") or v:IsA("BoolValue") or v:IsA("StringValue") then
+            table.insert(results, {scope=scopeName, path=v:GetFullName(), class=v.ClassName, value=tostring(v.Value)})
+        elseif v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("BindableEvent") or v:IsA("BindableFunction") then
+            table.insert(results, {scope=scopeName, path=v:GetFullName(), class=v.ClassName})
+        end
+    end
+end
+
+local function runDiagnostic()
+    local results = {}
+    local char = LocalPlayer.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    safePrint("=== Diagnostic: QuickReload candidates ===")
+    if tool then
+        safePrint("Tool found: "..tool:GetFullName())
+        inspectContainer(tool, "Tool", results)
+    else
+        safePrint("Tool NOT found in character.")
+    end
+
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local ReplicatedFirst = game:GetService("ReplicatedFirst")
+    inspectContainer(ReplicatedStorage, "ReplicatedStorage", results)
+    inspectContainer(ReplicatedFirst, "ReplicatedFirst", results)
+    inspectContainer(workspace, "Workspace", results)
+
+    safePrint("---- MATCHES (name contains 'reload' or 'ammo') ----")
+    for i,r in ipairs(results) do
+        local low = r.path:lower()
+        if string.find(low, "reload") or string.find(low, "ammo") or string.find(low, "mag") or string.find(low, "clip") then
+            if r.value then
+                safePrint(("%d) %s | %s | %s = %s"):format(i, r.scope, r.path, r.class, r.value))
+            else
+                safePrint(("%d) %s | %s | %s"):format(i, r.scope, r.path, r.class))
+            end
+        end
+    end
+    safePrint("Diagnostic finished. Jika mau, copy semua output dan kirim ke saya.")
+end
+
+runDiagnostic()
