@@ -1,0 +1,13 @@
+-- ==== Diagnostic: Spy Reload RemoteEvent ====
+for _,v in ipairs(game:GetDescendants()) do
+    if v:IsA("RemoteEvent") and v.Name == "Reload" then
+        local old; old = hookfunction(v.FireServer, function(self, ...)
+            local args = {...}
+            warn("[Spy] Reload RemoteEvent dipanggil!", self:GetFullName())
+            for i, a in ipairs(args) do
+                warn("  Arg["..i.."] =", a, typeof(a))
+            end
+            return old(self, ...)
+        end)
+    end
+end
