@@ -1,8 +1,8 @@
--- 2P Battle Tycoon — Full Fixed Script (Patched)
--- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot
+-- 2P Battle Tycoon — Full Fixed Script (Patched) + Infinite Ammo
+-- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot + Infinite Ammo
 -- Improvements: fixes to AutoE feedback, robust ESP lifecycle, walkspeed save/restore,
--- safer camera writes, improved connection tracking, R6/R15 compatibility, and more.
--- CREDIT TO: RiiK (RiiK26) --
+-- safer camera writes, improved connection tracking, and more.
+-- CREDIT TO: RiiK (RiiK26) -- Added: Infinite Ammo by assistant
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
@@ -39,6 +39,7 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false, -- if true, aimbot only while right mouse held
+    InfiniteAmmo = false, -- NEW: infinite ammo toggle
 }
 
 local MAX_ESP_DISTANCE = 250 -- studs
@@ -212,6 +213,7 @@ hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
+hudAdd("Infinite Ammo") -- NEW HUD label
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -551,6 +553,153 @@ keep(RunService.RenderStepped:Connect(function()
     end
 end))
 
+-- === Infinite Ammo Implementation ===
+-- Strategy:
+-- 1) Look for common ammo-storing IntValue/NumberValue names inside Tools (and Attributes).
+-- 2) Force them to a big value and keep enforcing while toggle is ON.
+-- 3) Hook Backpack.ChildAdded and CharacterAdded to catch new tools.
+-- 4) Clean up connections when disabled / on respawn.
+
+local ammoNames = {
+    "Ammo", "AmmoInMag", "CurrentAmmo", "AmmoValue", "AmmoCount", "Magazine", "Clip", "Clips", "Rounds", "RoundsInMag"
+}
+
+local infiniteConnections = {}
+local function disconnectInfiniteConns()
+    for _,c in ipairs(infiniteConnections) do
+        pcall(function() c:Disconnect() end)
+    end
+    infiniteConnections = {}
+end
+
+local function forceAmmoValue(valObj)
+    pcall(function()
+        if valObj:IsA("IntValue") or valObj:IsA("NumberValue") then
+            valObj.Value = math.max(valObj.Value, 999)
+        end
+    end)
+end
+
+local function setAttributeIfExists(inst, name, value)
+    pcall(function()
+        if inst.GetAttribute and inst:GetAttribute(name) ~= nil then
+            inst:SetAttribute(name, value)
+        end
+    end)
+end
+
+local function applyInfiniteToInstance(inst)
+    if not inst then return end
+    -- check direct children values
+    for _,name in ipairs(ammoNames) do
+        local v = inst:FindFirstChild(name)
+        if v and (v:IsA("IntValue") or v:IsA("NumberValue")) then
+            forceAmmoValue(v)
+            local conn = v.Changed:Connect(function()
+                if FEATURE.InfiniteAmmo then
+                    pcall(function() v.Value = math.max(v.Value, 999) end)
+                end
+            end)
+            table.insert(infiniteConnections, conn)
+        end
+        -- attributes
+        pcall(function()
+            if inst.GetAttribute and inst:GetAttribute(name) ~= nil then
+                inst:SetAttribute(name, 999)
+            end
+        end)
+    end
+
+    -- also attempt to find nested value objects (common patterns)
+    for _,child in ipairs(inst:GetDescendants()) do
+        if child:IsA("IntValue") or child:IsA("NumberValue") then
+            local lname = child.Name
+            for _,tname in ipairs(ammoNames) do
+                if lname == tname then
+                    forceAmmoValue(child)
+                    local conn = child.Changed:Connect(function()
+                        if FEATURE.InfiniteAmmo then
+                            pcall(function() child.Value = math.max(child.Value, 999) end)
+                        end
+                    end)
+                    table.insert(infiniteConnections, conn)
+                    break
+                end
+            end
+        end
+        -- attributes on deeper instances
+        if child.GetAttribute then
+            for _,tname in ipairs(ammoNames) do
+                if child:GetAttribute(tname) ~= nil then
+                    pcall(function() child:SetAttribute(tname, 999) end)
+                end
+            end
+        end
+    end
+end
+
+local function scanToolsAndApply()
+    pcall(function()
+        -- Character tools
+        if LocalPlayer.Character then
+            for _,obj in ipairs(LocalPlayer.Character:GetChildren()) do
+                if obj:IsA("Tool") then
+                    applyInfiniteToInstance(obj)
+                end
+            end
+        end
+        -- Backpack tools
+        local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+        if backpack then
+            for _,obj in ipairs(backpack:GetChildren()) do
+                if obj:IsA("Tool") then
+                    applyInfiniteToInstance(obj)
+                end
+            end
+        end
+    end)
+end
+
+local infiniteLoopConn = nil
+local function startInfiniteAmmo()
+    if infiniteLoopConn then return end
+    -- initial scan
+    scanToolsAndApply()
+    -- listen for new tools in backpack and character
+    keep(LocalPlayer.Backpack.ChildAdded:Connect(function(c)
+        if c:IsA("Tool") then
+            task.wait(0.15)
+            applyInfiniteToInstance(c)
+        end
+    end))
+    keep(LocalPlayer.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        scanToolsAndApply()
+        -- also watch tools added directly to character
+        keep(char.ChildAdded:Connect(function(c)
+            if c:IsA("Tool") then
+                task.wait(0.15)
+                applyInfiniteToInstance(c)
+            end
+        end))
+    end))
+    -- heartbeat enforcement (throttled)
+    infiniteLoopConn = keep(RunService.Heartbeat:Connect(function(dt)
+        if not FEATURE.InfiniteAmmo then return end
+        -- re-scan periodically to catch scripts that recreate values
+        scanToolsAndApply()
+    end))
+end
+
+local function stopInfiniteAmmo()
+    FEATURE.InfiniteAmmo = false
+    disconnectInfiniteConns()
+    if infiniteLoopConn then
+        pcall(function() infiniteLoopConn:Disconnect() end)
+        infiniteLoopConn = nil
+    end
+end
+
 -- Register Toggles (UI + callbacks)
 registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
@@ -579,6 +728,13 @@ registerToggle("Aimbot", "Aimbot", function(state)
         -- nothing special; RenderStepped loop will stop acting
     end
 end)
+registerToggle("Infinite Ammo", "InfiniteAmmo", function(state)
+    if state then
+        startInfiniteAmmo()
+    else
+        stopInfiniteAmmo()
+    end
+end)
 
 -- Initialize HUD with current states
 for k,_ in pairs(FEATURE) do
@@ -587,10 +743,11 @@ for k,_ in pairs(FEATURE) do
     if k == "AutoE" then display = "Auto Press E" end
     if k == "WalkEnabled" then display = "WalkSpeed" end
     if k == "Aimbot" then display = "Aimbot" end
+    if k == "InfiniteAmmo" then display = "Infinite Ammo" end
     if display then updateHUD(display, FEATURE[k]) end
 end
 
--- Hotkeys (F1-F4)
+-- Hotkeys (F1-F5) - F5 = Infinite Ammo
 keep(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then
@@ -601,6 +758,8 @@ keep(UIS.InputBegan:Connect(function(input, gp)
         ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
     elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then
         ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
+    elseif input.KeyCode == Enum.KeyCode.F5 and ToggleCallbacks.InfiniteAmmo then
+        ToggleCallbacks.InfiniteAmmo(not FEATURE.InfiniteAmmo)
     end
 end))
 
@@ -614,6 +773,8 @@ keep(LocalPlayer.CharacterRemoving:Connect(function()
     restoreWalkSpeed()
     -- stop AutoE
     stopAutoE()
+    -- stop infinite ammo
+    stopInfiniteAmmo()
 end))
 
 -- Ensure we restore walk speed on respawn as well
@@ -624,6 +785,13 @@ keep(LocalPlayer.CharacterAdded:Connect(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum and originalWalkSpeed == nil then originalWalkSpeed = hum.WalkSpeed end
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+    end
+    -- reapply infinite ammo if enabled
+    if FEATURE.InfiniteAmmo then
+        task.spawn(function()
+            task.wait(0.5)
+            startInfiniteAmmo()
         end)
     end
 end))
@@ -642,7 +810,8 @@ if _G then
         -- restore walk speed and stop autoE
         restoreWalkSpeed()
         stopAutoE()
+        stopInfiniteAmmo()
     end
 end
 
-print("✅ TPB Full Script loaded (Patched). Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD.")
+print("✅ TPB Full Script loaded (Patched). Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot, F5=InfiniteAmmo. LeftAlt toggles UI/HUD.")
