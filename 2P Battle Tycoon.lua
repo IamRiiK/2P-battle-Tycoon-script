@@ -1,5 +1,5 @@
--- 2P Battle Tycoon — Full Fixed Script (Final v3 + QuickReload)
--- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4) + QuickReload
+-- 2P Battle Tycoon — Full Fixed Script (Final v3 + Instant QuickReload)
+-- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4) + Instant QuickReload
 -- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, F5=QuickReload toggle, LeftAlt=Toggle UI/HUD
 --Credit to RiiK @RiiK26--
 
@@ -14,6 +14,7 @@ local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -42,7 +43,7 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     QuickReload = false,
-    ReloadDelay = 0.1,
+    ReloadDelay = 0.05, -- very small delay for instant feel
 }
 
 -- ==========
@@ -67,6 +68,28 @@ local function safeWaitCamera()
     else
         Camera = Workspace.CurrentCamera or Camera
     end
+end
+
+local function findMaxAmmoFromTool(tool)
+    -- try to find explicit max ammo fields
+    local candidates = {"MaxAmmo", "Max", "Capacity", "MagazineSize", "ClipSize"}
+    for _,name in ipairs(candidates) do
+        local v = tool:FindFirstChild(name, true)
+        if v and (v:IsA("NumberValue") or v:IsA("IntValue")) then
+            return tonumber(v.Value)
+        end
+    end
+    -- fallback: look for any NumberValue descendant with 'max'/'cap'/'mag' in name
+    for _,v in ipairs(tool:GetDescendants()) do
+        if (v:IsA("NumberValue") or v:IsA("IntValue")) then
+            local n = v.Name:lower()
+            if n:find("max") or n:find("cap") or n:find("mag") or n:find("clip") then
+                return tonumber(v.Value)
+            end
+        end
+    end
+    -- final fallback: common default
+    return 30
 end
 
 -- ==========
@@ -439,49 +462,37 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========
--- Quick Reload
---   Notes:
---   - Script attempts common patterns: NumberValue named ReloadTime, RemoteEvent named Reload, Ammo value objects.
---   - Behavior depends on how the game's weapon is implemented; tweak selectors if needed.
+-- Instant Quick Reload (final)
 -- ==========
-local function quickReloadLoop()
+local function instantReloadLoop()
     task.spawn(function()
         while FEATURE.QuickReload do
             pcall(function()
                 local char = LocalPlayer.Character
-                if char then
-                    local tool = char:FindFirstChildOfClass("Tool")
-                    if tool then
-                        -- Attempt common ammo/value names
-                        local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue") or tool:FindFirstChild("AmmoCount")
-                        local reload = tool:FindFirstChild("ReloadTime") or tool:FindFirstChild("Reload") or tool:FindFirstChild("ReloadEvent")
+                if not char then return end
+                local tool = char:FindFirstChildOfClass("Tool")
+                if not tool then return end
 
-                        if ammo and ammo.Value and type(ammo.Value) == "number" and ammo.Value <= 0 then
-                            if reload then
-                                if reload:IsA("NumberValue") then
-                                    -- shorten reload duration if possible
-                                    pcall(function() reload.Value = FEATURE.ReloadDelay end)
-                                elseif reload:IsA("RemoteEvent") then
-                                    pcall(function() reload:FireServer() end)
-                                elseif reload:IsA("BindableEvent") then
-                                    pcall(function() reload:Fire() end)
-                                elseif reload:IsA("BindableFunction") then
-                                    pcall(function() reload:Invoke() end)
-                                end
-                            else
-                                -- fallback: try to simulate keypress R (common reload key) if VirtualInputManager exists
-                                if VIM then
-                                    pcall(function()
-                                        VIM:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                                        VIM:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                                    end)
-                                end
-                            end
+                local ammo = tool:FindFirstChild("Ammo")
+                local reloadRemote = tool:FindFirstChild("Reload")
+
+                if ammo and ammo:IsA("NumberValue") then
+                    if ammo.Value <= 0 then
+                        local maxAmmo = findMaxAmmoFromTool(tool) or 30
+                        -- set client-side ammo instantly
+                        pcall(function() ammo.Value = maxAmmo end)
+
+                        -- call remote to sync server-side reload if available
+                        if reloadRemote and reloadRemote:IsA("RemoteEvent") then
+                            pcall(function() reloadRemote:FireServer() end)
                         end
+
+                        -- small delay to avoid tight spam
+                        task.wait(FEATURE.ReloadDelay or 0.05)
                     end
                 end
             end)
-            task.wait(0.2)
+            task.wait(0.04)
         end
     end)
 end
@@ -498,7 +509,7 @@ end)
 registerToggle("WalkSpeed", "WalkEnabled")
 registerToggle("Aimbot", "Aimbot")
 registerToggle("Quick Reload", "QuickReload", function(state)
-    if state then quickReloadLoop() end
+    if state then instantReloadLoop() end
 end)
 
 -- ==========
@@ -515,7 +526,6 @@ UIS.InputBegan:Connect(function(input,gp)
     elseif input.KeyCode == Enum.KeyCode.F4 then
         ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
     elseif input.KeyCode == Enum.KeyCode.F5 then
-        -- Quick Reload
         ToggleCallbacks.QuickReload(not FEATURE.QuickReload)
     end
 end)
