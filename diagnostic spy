@@ -1,4 +1,4 @@
--- 🔍 Force Spy Tool Aktif
+-- file khusus spy
 local plr = game.Players.LocalPlayer
 
 local function scanTool(tool)
@@ -18,7 +18,6 @@ local function scanTool(tool)
     end
 end
 
--- cek setiap kali tool di-equip
 plr.CharacterAdded:Connect(function(char)
     char.ChildAdded:Connect(function(child)
         if child:IsA("Tool") then
@@ -28,7 +27,6 @@ plr.CharacterAdded:Connect(function(char)
     end)
 end)
 
--- kalau sudah spawn, cek tool aktif sekarang
 if plr.Character then
     local tool = plr.Character:FindFirstChildOfClass("Tool")
     if tool then
@@ -36,4 +34,4 @@ if plr.Character then
     end
 end
 
-print("✅ Spy aktif, equip senjata lalu reload untuk lihat log.")
+print("✅ Spy aktif. Equip senjata, reload → cek log F9")
