@@ -1,6 +1,6 @@
--- 2P Battle Tycoon — Full Fixed Script (Final v3)
--- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
--- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
+-- 2P Battle Tycoon — Full Fixed Script (Final v3 + QuickReload)
+-- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4) + QuickReload
+-- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, F5=QuickReload toggle, LeftAlt=Toggle UI/HUD
 --Credit to RiiK @RiiK26--
 
 -- Ensure game loaded
@@ -41,6 +41,8 @@ local FEATURE = {
     Aimbot = false,
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
+    QuickReload = false,
+    ReloadDelay = 0.1,
 }
 
 -- ==========
@@ -151,8 +153,8 @@ HUDGui.DisplayOrder = 10000
 safeParentGui(HUDGui)
 
 local HUD = Instance.new("Frame", HUDGui)
-HUD.Size = UDim2.new(0,220,0,110)
-HUD.Position = UDim2.new(1,-230,1,-140)
+HUD.Size = UDim2.new(0,220,0,130)
+HUD.Position = UDim2.new(1,-230,1,-160)
 HUD.BackgroundColor3 = Color3.fromRGB(20,20,20)
 HUD.BackgroundTransparency = 0.06
 HUD.BorderSizePixel = 0
@@ -181,6 +183,7 @@ hudAdd("ESP")
 hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
+hudAdd("Quick Reload")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -309,27 +312,23 @@ local function createESP(p)
     hl.Name = "BoxESP"
     hl.Adornee = p.Character
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    
-    -- Konfigurasi agar lebih kontras
-    hl.OutlineTransparency = 0 -- outline terlihat full
-    hl.OutlineColor = Color3.fromRGB(255,255,255) -- putih biar jelas
-    hl.FillTransparency = 0.25 -- lebih solid (default kamu 0.7 jadi buram)
+    hl.OutlineTransparency = 0
+    hl.OutlineColor = Color3.fromRGB(255,255,255)
+    hl.FillTransparency = 0.25
 
-    -- Warna berdasarkan tim
     if p.Team and LocalPlayer.Team then
         if p.Team == LocalPlayer.Team then
-            hl.FillColor = Color3.fromRGB(0,255,0)   -- hijau terang (ally)
+            hl.FillColor = Color3.fromRGB(0,255,0)
         else
-            hl.FillColor = Color3.fromRGB(255,0,0)  -- merah terang (enemy)
+            hl.FillColor = Color3.fromRGB(255,0,0)
         end
     else
-        hl.FillColor = Color3.fromRGB(255,255,0)     -- kuning neon (neutral)
+        hl.FillColor = Color3.fromRGB(255,255,0)
     end
 
     hl.Parent = p.Character
     espObjects[p] = {hl}
 end
-
 
 local function refreshESPForPlayer(p)
     if FEATURE.ESP then
@@ -340,19 +339,15 @@ local function refreshESPForPlayer(p)
 end
 
 local function enableESP()
-    -- Untuk semua player awal
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
-            -- Auto pasang ulang ESP kalau respawn
             p.CharacterAdded:Connect(function()
-                task.wait(0.5) -- delay kecil biar humanoid kebentuk
+                task.wait(0.5)
                 refreshESPForPlayer(p)
             end)
         end
     end
-
-    -- Kalau ada player baru join
     Players.PlayerAdded:Connect(function(p)
         if p ~= LocalPlayer then
             p.CharacterAdded:Connect(function()
@@ -362,8 +357,6 @@ local function enableESP()
             refreshESPForPlayer(p)
         end
     end)
-
-    -- Kalau ada player keluar
     Players.PlayerRemoving:Connect(function(p)
         clearESP(p)
     end)
@@ -374,7 +367,6 @@ local function disableESP()
         clearESP(p)
     end
 end
-
 
 -- ==========
 -- Auto Press E
@@ -447,6 +439,40 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========
+-- Quick Reload
+-- ==========
+local function quickReloadLoop()
+    task.spawn(function()
+        while FEATURE.QuickReload do
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char then
+                    local tool = char:FindFirstChildOfClass("Tool")
+                    if tool then
+                        local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue")
+                        local reload = tool:FindFirstChild("ReloadTime") or tool:FindFirstChild("Reload")
+                        if ammo and ammo.Value <= 0 then
+                            if reload then
+                                if reload:IsA("NumberValue") then
+                                    reload.Value = FEATURE.ReloadDelay
+                                elseif reload:IsA("RemoteEvent") then
+                                    reload:FireServer()
+                                elseif reload:IsA("BindableEvent") then
+                                    reload:Fire()
+                                elseif reload:IsA("BindableFunction") then
+                                    reload:Invoke()
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            task.wait(0.2)
+        end
+    end)
+end
+
+-- ==========
 -- Register Toggles
 -- ==========
 registerToggle("ESP", "ESP", function(state)
@@ -457,19 +483,7 @@ registerToggle("Auto Press E", "AutoE", function(state)
 end)
 registerToggle("WalkSpeed", "WalkEnabled")
 registerToggle("Aimbot", "Aimbot")
-
--- ==========
--- Hotkeys
--- ==========
-UIS.InputBegan:Connect(function(input,gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.F1 then
-        ToggleCallbacks.ESP(not FEATURE.ESP)
-    elseif input.KeyCode == Enum.KeyCode.F2 then
-        ToggleCallbacks.AutoE(not FEATURE.AutoE)
-    elseif input.KeyCode == Enum.KeyCode.F3 then
-        ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 then
-        ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
-    end
+registerToggle("Quick Reload", "QuickReload", function(state)
+    if state then quickReloadLoop() end
 end)
+
