@@ -171,7 +171,7 @@ end)
 
 -- HUD
 local HUDGui = Instance.new("ScreenGui")
-HUDGui.Name = "TPB_TycoonHUD_Final"
+HUDGui.Name = "TPB_TycoonHUD_FINAL"
 HUDGui.DisplayOrder = 10000
 safeParentGui(HUDGui)
 
@@ -215,11 +215,86 @@ local function updateHUD(name, state)
     end
 end
 
+-- LeftAlt toggle UI/HUD
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
         MainFrame.Visible = not MainFrame.Visible
         HUD.Visible = not MainFrame.Visible
+    end
+end)
+
+-- ==========
+-- Quick Reload (manual + instant auto loop will use FEATURE.QuickReload)
+-- Inserted here so updateHUD and UI exist
+-- ==========
+-- toggle state is FEATURE.QuickReload (ke UI/hud)
+-- tabel max ammo per senjata
+local MaxAmmo = {
+    SMG = 30,
+    Sniper = 1,
+    Railgun = 3,
+}
+
+-- fungsi deteksi tool & ammo value (gunakan LocalPlayer)
+local function getCurrentToolAmmo()
+    local char = LocalPlayer.Character or workspace:FindFirstChild(LocalPlayer.Name)
+    if not char then return end
+
+    for _, tool in ipairs(char:GetChildren()) do
+        local ammo = tool:FindFirstChild("Ammo")
+        if ammo and ammo:IsA("NumberValue") then
+            return tool, ammo
+        end
+    end
+end
+
+-- fungsi quick reload manual (R)
+local function quickReloadManual()
+    local tool, ammo = getCurrentToolAmmo()
+    if tool and ammo then
+        local max = MaxAmmo[tool.Name] or findMaxAmmoFromTool(tool)
+        if max then
+            pcall(function() ammo.Value = max end)
+            print("⚡ QuickReload manual:", tool.Name, "->", ammo.Value)
+        end
+    end
+end
+
+-- fungsi stop animasi reload
+local function stopReloadAnimation()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+        local anim = track.Animation
+        if anim and string.lower(anim.Name):find("reload") then
+            track:Stop()
+            print("🛑 Reload animation dibatalkan:", anim.Name)
+        end
+    end
+end
+
+-- hook input: F5 toggle (sync ke FEATURE & HUD), R for manual reload
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.F5 then
+        FEATURE.QuickReload = not FEATURE.QuickReload
+        updateHUD("Quick Reload", FEATURE.QuickReload)
+        print("🔀 QuickReload:", FEATURE.QuickReload and "ON" or "OFF")
+        if FEATURE.QuickReload then
+            -- start the instant reload loop (the function defined later will check FEATURE.QuickReload)
+            -- We start it here only to ensure it runs; if started elsewhere, it's safe to call again.
+            pcall(function() instantReloadLoop() end)
+        end
+    end
+
+    if FEATURE.QuickReload and input.KeyCode == Enum.KeyCode.R then
+        quickReloadManual()
+        stopReloadAnimation()
     end
 end)
 
@@ -479,10 +554,10 @@ local function instantReloadLoop()
                 if ammo and ammo:IsA("NumberValue") then
                     if ammo.Value <= 0 then
                         local maxAmmo = findMaxAmmoFromTool(tool) or 30
-                        -- set client-side ammo instantly
+                        -- set client-side ammo instantly (cancel animasi reload)
                         pcall(function() ammo.Value = maxAmmo end)
 
-                        -- call remote to sync server-side reload if available
+                        -- call remote ke server biar sinkron
                         if reloadRemote and reloadRemote:IsA("RemoteEvent") then
                             pcall(function() reloadRemote:FireServer() end)
                         end
