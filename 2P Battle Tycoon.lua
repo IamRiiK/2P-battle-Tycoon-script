@@ -440,6 +440,9 @@ end)
 
 -- ==========
 -- Quick Reload
+--   Notes:
+--   - Script attempts common patterns: NumberValue named ReloadTime, RemoteEvent named Reload, Ammo value objects.
+--   - Behavior depends on how the game's weapon is implemented; tweak selectors if needed.
 -- ==========
 local function quickReloadLoop()
     task.spawn(function()
@@ -449,18 +452,29 @@ local function quickReloadLoop()
                 if char then
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then
-                        local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue")
-                        local reload = tool:FindFirstChild("ReloadTime") or tool:FindFirstChild("Reload")
-                        if ammo and ammo.Value <= 0 then
+                        -- Attempt common ammo/value names
+                        local ammo = tool:FindFirstChild("Ammo") or tool:FindFirstChild("AmmoValue") or tool:FindFirstChild("AmmoCount")
+                        local reload = tool:FindFirstChild("ReloadTime") or tool:FindFirstChild("Reload") or tool:FindFirstChild("ReloadEvent")
+
+                        if ammo and ammo.Value and type(ammo.Value) == "number" and ammo.Value <= 0 then
                             if reload then
                                 if reload:IsA("NumberValue") then
-                                    reload.Value = FEATURE.ReloadDelay
+                                    -- shorten reload duration if possible
+                                    pcall(function() reload.Value = FEATURE.ReloadDelay end)
                                 elseif reload:IsA("RemoteEvent") then
-                                    reload:FireServer()
+                                    pcall(function() reload:FireServer() end)
                                 elseif reload:IsA("BindableEvent") then
-                                    reload:Fire()
+                                    pcall(function() reload:Fire() end)
                                 elseif reload:IsA("BindableFunction") then
-                                    reload:Invoke()
+                                    pcall(function() reload:Invoke() end)
+                                end
+                            else
+                                -- fallback: try to simulate keypress R (common reload key) if VirtualInputManager exists
+                                if VIM then
+                                    pcall(function()
+                                        VIM:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                                        VIM:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                                    end)
                                 end
                             end
                         end
@@ -487,3 +501,37 @@ registerToggle("Quick Reload", "QuickReload", function(state)
     if state then quickReloadLoop() end
 end)
 
+-- ==========
+-- Hotkeys
+-- ==========
+UIS.InputBegan:Connect(function(input,gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F1 then
+        ToggleCallbacks.ESP(not FEATURE.ESP)
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+        ToggleCallbacks.AutoE(not FEATURE.AutoE)
+    elseif input.KeyCode == Enum.KeyCode.F3 then
+        ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
+    elseif input.KeyCode == Enum.KeyCode.F4 then
+        ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
+    elseif input.KeyCode == Enum.KeyCode.F5 then
+        -- Quick Reload
+        ToggleCallbacks.QuickReload(not FEATURE.QuickReload)
+    end
+end)
+
+-- ==========
+-- Cleanup on unload / character remove
+-- ==========
+Players.PlayerRemoving:Connect(function(p)
+    if espObjects[p] then clearESP(p) end
+end)
+
+LocalPlayer.CharacterRemoving:Connect(function()
+    -- Clear local esp objects on respawn
+    for p,_ in pairs(espObjects) do
+        clearESP(p)
+    end
+end)
+
+-- End of script
