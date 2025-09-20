@@ -1,4 +1,4 @@
--- 2P Battle Tycoon — Full Fixed Script (Patched) + Infinite Ammo
+-- 2P Battle Tycoon — Full Fixed Script (Patched) + Infinite Ammo (Value + RemoteEvent bypass)
 -- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot + Infinite Ammo
 -- Improvements: fixes to AutoE feedback, robust ESP lifecycle, walkspeed save/restore,
 -- safer camera writes, improved connection tracking, and more.
@@ -48,13 +48,11 @@ local WALK_UPDATE_INTERVAL = 0.12 -- seconds
 -- Connection tracking for cleanup
 local Connections = {}
 local function keep(conn)
-    -- store RBXScriptConnection safely
     if conn == nil then return nil end
     local t = typeof(conn)
     if t == "RBXScriptConnection" then
         table.insert(Connections, conn)
     else
-        -- accept any table-like with Disconnect (for compatibility)
         local ok, has = pcall(function() return conn and conn.Disconnect end)
         if ok and has then table.insert(Connections, conn) end
     end
@@ -73,7 +71,6 @@ local function safeParentGui(gui)
     if PlayerGui and PlayerGui.Parent then
         gui.Parent = PlayerGui
     else
-        -- fallback: attempt to parent to PlayerGui again later
         pcall(function() gui.Parent = PlayerGui end)
     end
 end
@@ -182,7 +179,7 @@ HUDGui.DisplayOrder = 10000
 safeParentGui(HUDGui)
 
 local HUD = Instance.new("Frame", HUDGui)
-HUD.Size = UDim2.new(0,220,0,130)
+HUD.Size = UDim2.new(0,220,0,150)
 HUD.Position = UDim2.new(1,-230,1,-160)
 HUD.BackgroundColor3 = Color3.fromRGB(20,20,20)
 HUD.BackgroundTransparency = 0.06
@@ -368,31 +365,25 @@ local function refreshESPForPlayer(p)
 end
 
 local function enableESP()
-    -- cleanup existing
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
 
-    -- initial apply and hook CharacterAdded/Removing for each player
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
             if p.Character then
-                -- clear and refresh on character removal
                 keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
             end
             keep(p.CharacterAdded:Connect(function()
                 task.wait(0.5)
                 refreshESPForPlayer(p)
-                -- ensure we clear when character is removed
                 if p.Character then
                     keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
                 end
             end))
-            -- if player changes team, update color
             keep(p:GetPropertyChangedSignal("Team"):Connect(function() refreshESPForPlayer(p) end))
         end
     end
 
-    -- watch for new players
     keep(Players.PlayerAdded:Connect(function(p)
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
@@ -408,7 +399,6 @@ local function enableESP()
         end
     end))
 
-    -- cleanup when players leave
     keep(Players.PlayerRemoving:Connect(function(p) clearESPForPlayer(p) end))
 end
 
@@ -441,9 +431,7 @@ end
 
 local function stopAutoE()
     FEATURE.AutoE = false
-    -- thread will exit naturally; ensure reference cleared
     if autoEThread then
-        -- wait a short moment for thread to cleanup
         task.spawn(function()
             task.wait(0.2)
             autoEThread = nil
@@ -461,7 +449,6 @@ local function setPlayerWalkSpeed(value)
     end)
 end
 
--- heartbeat loop to maintain walkspeed while enabled
 do
     local acc = 0
     keep(RunService.Heartbeat:Connect(function(dt)
@@ -481,7 +468,6 @@ do
     end))
 end
 
--- restore walk speed on disable or when humanoid removed
 local function restoreWalkSpeed()
     pcall(function()
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -503,7 +489,6 @@ end
 keep(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
-    -- don't aim while typing into textboxes
     if UIS:GetFocusedTextBox() then return end
     safeWaitCamera()
     if not Camera then return end
@@ -514,11 +499,10 @@ keep(RunService.RenderStepped:Connect(function()
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             local okTarget = false
-            -- team check: if teams exist, only target other teams
             if p.Team and LocalPlayer.Team then
                 okTarget = (p.Team ~= LocalPlayer.Team)
             else
-                okTarget = true -- no teams set; target anyone else
+                okTarget = true
             end
             if okTarget and p.Character then
                 local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
@@ -541,11 +525,9 @@ keep(RunService.RenderStepped:Connect(function()
             local blended = currentLook:Lerp(dir, clamp(FEATURE.AIM_LERP, 0, 1))
             local pos = Camera.CFrame.Position
             local targetCFrame = CFrame.new(pos, pos + blended)
-            -- set camera gently
             Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, clamp(FEATURE.AIM_LERP, 0.05, 0.9))
         end)
         if not success then
-            -- if camera write fails, disable aimbot to be safe
             warn("Aimbot camera write error:", err)
             FEATURE.Aimbot = false
             updateHUD("Aimbot", false)
@@ -553,64 +535,51 @@ keep(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- === Infinite Ammo Implementation ===
--- Strategy:
--- 1) Look for common ammo-storing IntValue/NumberValue names inside Tools (and Attributes).
--- 2) Force them to a big value and keep enforcing while toggle is ON.
--- 3) Hook Backpack.ChildAdded and CharacterAdded to catch new tools.
--- 4) Clean up connections when disabled / on respawn.
-
+-- === Infinite Ammo Implementation (Value-based + RemoteEvent bypass) ===
 local ammoNames = {
     "Ammo", "AmmoInMag", "CurrentAmmo", "AmmoValue", "AmmoCount", "Magazine", "Clip", "Clips", "Rounds", "RoundsInMag"
 }
 
-local infiniteConnections = {}
-local function disconnectInfiniteConns()
-    for _,c in ipairs(infiniteConnections) do
+local ammoConnections = {}
+local function disconnectAmmoConnections()
+    for _,c in ipairs(ammoConnections) do
         pcall(function() c:Disconnect() end)
     end
-    infiniteConnections = {}
+    ammoConnections = {}
 end
 
 local function forceAmmoValue(valObj)
     pcall(function()
         if valObj:IsA("IntValue") or valObj:IsA("NumberValue") then
-            valObj.Value = math.max(valObj.Value, 999)
-        end
-    end)
-end
-
-local function setAttributeIfExists(inst, name, value)
-    pcall(function()
-        if inst.GetAttribute and inst:GetAttribute(name) ~= nil then
-            inst:SetAttribute(name, value)
+            -- use a large finite integer to avoid math.huge edge cases
+            valObj.Value = 9999
         end
     end)
 end
 
 local function applyInfiniteToInstance(inst)
     if not inst then return end
-    -- check direct children values
+    -- direct children
     for _,name in ipairs(ammoNames) do
         local v = inst:FindFirstChild(name)
         if v and (v:IsA("IntValue") or v:IsA("NumberValue")) then
             forceAmmoValue(v)
             local conn = v.Changed:Connect(function()
                 if FEATURE.InfiniteAmmo then
-                    pcall(function() v.Value = math.max(v.Value, 999) end)
+                    pcall(function() v.Value = 9999 end)
                 end
             end)
-            table.insert(infiniteConnections, conn)
+            table.insert(ammoConnections, conn)
         end
         -- attributes
         pcall(function()
             if inst.GetAttribute and inst:GetAttribute(name) ~= nil then
-                inst:SetAttribute(name, 999)
+                inst:SetAttribute(name, 9999)
             end
         end)
     end
 
-    -- also attempt to find nested value objects (common patterns)
+    -- descendants
     for _,child in ipairs(inst:GetDescendants()) do
         if child:IsA("IntValue") or child:IsA("NumberValue") then
             local lname = child.Name
@@ -619,19 +588,18 @@ local function applyInfiniteToInstance(inst)
                     forceAmmoValue(child)
                     local conn = child.Changed:Connect(function()
                         if FEATURE.InfiniteAmmo then
-                            pcall(function() child.Value = math.max(child.Value, 999) end)
+                            pcall(function() child.Value = 9999 end)
                         end
                     end)
-                    table.insert(infiniteConnections, conn)
+                    table.insert(ammoConnections, conn)
                     break
                 end
             end
         end
-        -- attributes on deeper instances
         if child.GetAttribute then
             for _,tname in ipairs(ammoNames) do
                 if child:GetAttribute(tname) ~= nil then
-                    pcall(function() child:SetAttribute(tname, 999) end)
+                    pcall(function() child:SetAttribute(tname, 9999) end)
                 end
             end
         end
@@ -640,7 +608,6 @@ end
 
 local function scanToolsAndApply()
     pcall(function()
-        -- Character tools
         if LocalPlayer.Character then
             for _,obj in ipairs(LocalPlayer.Character:GetChildren()) do
                 if obj:IsA("Tool") then
@@ -648,7 +615,6 @@ local function scanToolsAndApply()
                 end
             end
         end
-        -- Backpack tools
         local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
         if backpack then
             for _,obj in ipairs(backpack:GetChildren()) do
@@ -661,43 +627,131 @@ local function scanToolsAndApply()
 end
 
 local infiniteLoopConn = nil
-local function startInfiniteAmmo()
-    if infiniteLoopConn then return end
-    -- initial scan
+local function startInfiniteAmmo_valueBased()
     scanToolsAndApply()
-    -- listen for new tools in backpack and character
-    keep(LocalPlayer.Backpack.ChildAdded:Connect(function(c)
-        if c:IsA("Tool") then
-            task.wait(0.15)
-            applyInfiniteToInstance(c)
-        end
-    end))
+    local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+    if backpack then
+        keep(backpack.ChildAdded:Connect(function(c)
+            if c:IsA("Tool") then
+                task.wait(0.12)
+                applyInfiniteToInstance(c)
+            end
+        end))
+    end
     keep(LocalPlayer.CharacterAdded:Connect(function(char)
         task.wait(0.5)
         scanToolsAndApply()
-        -- also watch tools added directly to character
         keep(char.ChildAdded:Connect(function(c)
             if c:IsA("Tool") then
-                task.wait(0.15)
+                task.wait(0.12)
                 applyInfiniteToInstance(c)
             end
         end))
     end))
-    -- heartbeat enforcement (throttled)
-    infiniteLoopConn = keep(RunService.Heartbeat:Connect(function(dt)
+
+    infiniteLoopConn = keep(RunService.Heartbeat:Connect(function()
         if not FEATURE.InfiniteAmmo then return end
-        -- re-scan periodically to catch scripts that recreate values
+        -- periodic re-scan in case values are recreated
         scanToolsAndApply()
     end))
 end
 
-local function stopInfiniteAmmo()
-    FEATURE.InfiniteAmmo = false
-    disconnectInfiniteConns()
+local function stopInfiniteAmmo_valueBased()
+    disconnectAmmoConnections()
     if infiniteLoopConn then
         pcall(function() infiniteLoopConn:Disconnect() end)
         infiniteLoopConn = nil
     end
+end
+
+-- RemoteEvent bypass via namecall hook (best-effort, only if hookmetamethod available)
+local originalNamecall = nil
+local hookedNamecall = false
+local hookSupported = false
+-- pattern list: if the Remote name contains any of these keywords, we'll try to block or neuter calls
+local remoteNamePatterns = { "fire", "shoot", "ammo", "weapon", "gun", "shooting", "fireweapon", "fire_server", "fireclient" }
+
+local function remoteNameLooksLikeWeapon(name)
+    if not name then return false end
+    local low = tostring(name):lower()
+    for _,pat in ipairs(remoteNamePatterns) do
+        if low:find(pat, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+-- try to hook
+pcall(function()
+    if type(hookmetamethod) == "function" then
+        local ok, ret = pcall(function()
+            originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+                local method = getnamecallmethod and getnamecallmethod() or ""
+                if FEATURE.InfiniteAmmo and method == "FireServer" then
+                    -- only consider Instances (RemoteEvent/RemoteFunction)
+                    local ok2, isInst = pcall(function() return typeof(self) == "Instance" end)
+                    if ok2 and isInst then
+                        local class = nil
+                        pcall(function() class = self.ClassName end)
+                        if class == "RemoteEvent" or class == "RemoteFunction" then
+                            local nm = self.Name or ""
+                            if remoteNameLooksLikeWeapon(nm) then
+                                -- neuter the call: either block or modify args
+                                -- safer choice: block the call by returning nil
+                                return nil
+                            end
+                        else
+                            -- sometimes remotes live in tables or as strings, check tostring
+                            local s = tostring(self)
+                            if remoteNameLooksLikeWeapon(s) then
+                                return nil
+                            end
+                        end
+                    end
+                end
+                return originalNamecall(self, ...)
+            end)
+            hookedNamecall = true
+            hookSupported = true
+        end)
+        if not ok then
+            -- hooking failed, mark unsupported
+            hookSupported = false
+        end
+    else
+        hookSupported = false
+    end
+end)
+
+-- If we failed to store originalNamecall above (some executors return original), ensure we have fallback:
+if not originalNamecall then
+    local ok, val = pcall(function() return hookmetamethod end)
+    -- nothing to do; rely on FEATURE flag in hooked function if hook applied
+end
+
+local function startInfiniteAmmo_remoteBypass()
+    -- nothing specific to start beyond having hook active; the hook references FEATURE.InfiniteAmmo
+    -- but we still want to scan tools so both methods are active
+    scanToolsAndApply()
+end
+
+local function stopInfiniteAmmo_remoteBypass()
+    -- we cannot reliably unhook in all environments; our hook checks FEATURE.InfiniteAmmo flag so simply turning flag off is enough
+    -- nothing to do here
+end
+
+local function startInfiniteAmmo()
+    -- start both
+    startInfiniteAmmo_valueBased()
+    startInfiniteAmmo_remoteBypass()
+end
+
+local function stopInfiniteAmmo()
+    FEATURE.InfiniteAmmo = false
+    stopInfiniteAmmo_valueBased()
+    stopInfiniteAmmo_remoteBypass()
+    updateHUD("Infinite Ammo", false)
 end
 
 -- Register Toggles (UI + callbacks)
@@ -713,8 +767,6 @@ registerToggle("Auto Press E", "AutoE", function(state)
 end)
 registerToggle("WalkSpeed", "WalkEnabled", function(state)
     if state then
-        -- when enabling, we start enforcing walk speed in heartbeat loop
-        -- store original if possible
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum and not originalWalkSpeed then originalWalkSpeed = hum.WalkSpeed end
@@ -724,13 +776,13 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 registerToggle("Aimbot", "Aimbot", function(state)
-    if not state then
-        -- nothing special; RenderStepped loop will stop acting
-    end
+    -- nothing special
 end)
 registerToggle("Infinite Ammo", "InfiniteAmmo", function(state)
     if state then
+        FEATURE.InfiniteAmmo = true
         startInfiniteAmmo()
+        updateHUD("Infinite Ammo", true)
     else
         stopInfiniteAmmo()
     end
@@ -765,15 +817,10 @@ end))
 
 -- Cleanup (character remove & global)
 keep(LocalPlayer.CharacterRemoving:Connect(function()
-    -- clear ESP highlights
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-    -- disconnect tracked connections
     clearConnections()
-    -- restore walk speed
     restoreWalkSpeed()
-    -- stop AutoE
     stopAutoE()
-    -- stop infinite ammo
     stopInfiniteAmmo()
 end))
 
@@ -787,7 +834,6 @@ keep(LocalPlayer.CharacterAdded:Connect(function()
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
     end
-    -- reapply infinite ammo if enabled
     if FEATURE.InfiniteAmmo then
         task.spawn(function()
             task.wait(0.5)
@@ -807,7 +853,6 @@ if _G then
             local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
             if gh then gh:Destroy() end
         end)
-        -- restore walk speed and stop autoE
         restoreWalkSpeed()
         stopAutoE()
         stopInfiniteAmmo()
