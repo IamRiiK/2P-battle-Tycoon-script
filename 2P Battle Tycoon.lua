@@ -1,14 +1,11 @@
--- 2P Battle Tycoon — Full Fixed Script (Final, full version)
--- Features: Dark UI + HUD + ESP (Highlight AlwaysOnTop, warna tim) + AutoE + WalkSpeed + Aimbot
--- Stability: connection tracking & cleanup, safe parenting, drag replacement, throttles
--- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, LeftAlt=Toggle UI/HUD
--- Credit: (RiiK @RiiK26) --
+-- 2P Battle Tycoon — Full Fixed Script (Patched)
+-- Features: Dark UI + HUD + ESP + AutoE + WalkSpeed + Aimbot
+-- Improvements: fixes to AutoE feedback, robust ESP lifecycle, walkspeed save/restore,
+-- safer camera writes, improved connection tracking, R6/R15 compatibility, and more.
 
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- ======================
 -- Services
--- ======================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -30,9 +27,7 @@ end
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- ======================
 -- Config & state
--- ======================
 local FEATURE = {
     ESP = false,
     AutoE = false,
@@ -42,20 +37,24 @@ local FEATURE = {
     Aimbot = false,
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
+    AIM_HOLD = false, -- if true, aimbot only while right mouse held
 }
 
 local MAX_ESP_DISTANCE = 250 -- studs
 local WALK_UPDATE_INTERVAL = 0.12 -- seconds
 
--- ======================
 -- Connection tracking for cleanup
--- ======================
 local Connections = {}
 local function keep(conn)
-    if conn and type(conn) == "table" and conn.Disconnect then
+    -- store RBXScriptConnection safely
+    if conn == nil then return nil end
+    local t = typeof(conn)
+    if t == "RBXScriptConnection" then
         table.insert(Connections, conn)
-    elseif conn and type(conn) == "userdata" and conn.Disconnect then
-        table.insert(Connections, conn)
+    else
+        -- accept any table-like with Disconnect (for compatibility)
+        local ok, has = pcall(function() return conn and conn.Disconnect end)
+        if ok and has then table.insert(Connections, conn) end
     end
     return conn
 end
@@ -66,17 +65,14 @@ local function clearConnections()
     Connections = {}
 end
 
--- ======================
 -- Helpers
--- ======================
 local function safeParentGui(gui)
     gui.ResetOnSpawn = false
     if PlayerGui and PlayerGui.Parent then
         gui.Parent = PlayerGui
     else
-        -- fallback: try StarterGui (rare). Keep quiet if fails.
-        pcall(function() game:GetService("StarterGui").ResetCoreGuiEnabled end)
-        gui.Parent = PlayerGui
+        -- fallback: attempt to parent to PlayerGui again later
+        pcall(function() gui.Parent = PlayerGui end)
     end
 end
 
@@ -95,9 +91,7 @@ local function clamp(v, a, b)
     return v
 end
 
--- ======================
 -- Remove any previous GUIs (avoid duplicates when re-running)
--- ======================
 pcall(function()
     local old = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
     if old then old:Destroy() end
@@ -105,9 +99,7 @@ pcall(function()
     if old2 then old2:Destroy() end
 end)
 
--- ======================
 -- Build UI
--- ======================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "TPB_TycoonGUI_Final"
 ScreenGui.DisplayOrder = 9999
@@ -236,9 +228,7 @@ keep(UIS.InputBegan:Connect(function(input, gp)
     end
 end))
 
--- ======================
 -- Toggle helper (create toggle buttons)
--- ======================
 local ToggleCallbacks = {}
 local Buttons = {}
 local function registerToggle(displayName, featureKey, onChange)
@@ -272,9 +262,7 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
--- ======================
 -- WalkSpeed input (text box)
--- ======================
 do
     local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,40)
@@ -314,9 +302,7 @@ do
     end)
 end
 
--- ======================
 -- ESP System (Highlight AlwaysOnTop, team colors, distance cull)
--- ======================
 local espObjects = {}
 local MAX_ESP_DIST_SQ = MAX_ESP_DISTANCE * MAX_ESP_DISTANCE
 
@@ -339,15 +325,21 @@ local function getESPColor(p)
     end
 end
 
+local function rootPartOfCharacter(char)
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+end
+
 local function createESPForPlayer(p)
     clearESPForPlayer(p)
     if not p.Character then return end
-    local root = p.Character:FindFirstChild("HumanoidRootPart")
+    local root = rootPartOfCharacter(p.Character)
     if not root then return end
     safeWaitCamera()
     if not Camera or not Camera.CFrame then return end
     local camPos = Camera.CFrame.Position
-    if (root.Position - camPos).Magnitude^2 > MAX_ESP_DIST_SQ then
+    local diff = root.Position - camPos
+    local distSq = diff:Dot(diff)
+    if distSq > MAX_ESP_DIST_SQ then
         return
     end
 
@@ -376,13 +368,21 @@ local function enableESP()
     -- cleanup existing
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
 
-    -- initial apply and hook CharacterAdded for each player
+    -- initial apply and hook CharacterAdded/Removing for each player
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             refreshESPForPlayer(p)
+            if p.Character then
+                -- clear and refresh on character removal
+                keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+            end
             keep(p.CharacterAdded:Connect(function()
                 task.wait(0.5)
                 refreshESPForPlayer(p)
+                -- ensure we clear when character is removed
+                if p.Character then
+                    keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+                end
             end))
             -- if player changes team, update color
             keep(p:GetPropertyChangedSignal("Team"):Connect(function() refreshESPForPlayer(p) end))
@@ -396,8 +396,12 @@ local function enableESP()
             keep(p.CharacterAdded:Connect(function()
                 task.wait(0.5)
                 refreshESPForPlayer(p)
+                if p.Character then
+                    keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+                end
             end))
             keep(p:GetPropertyChangedSignal("Team"):Connect(function() refreshESPForPlayer(p) end))
+            keep(p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
         end
     end))
 
@@ -409,14 +413,15 @@ local function disableESP()
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
 end
 
--- ======================
 -- Auto Press E
--- ======================
 local autoEThread = nil
+local autoEDebounce = false
 local function startAutoE()
     if autoEThread then return end
     if not VIM then
-        warn("AutoE: VirtualInputManager not available in this environment. AutoE disabled.")
+        FEATURE.AutoE = false
+        warn("AutoE: VirtualInputManager not available. AutoE disabled.")
+        updateHUD("Auto Press E", false)
         return
     end
     autoEThread = task.spawn(function()
@@ -431,9 +436,29 @@ local function startAutoE()
     end)
 end
 
--- ======================
--- WalkSpeed (throttled writes)
--- ======================
+local function stopAutoE()
+    FEATURE.AutoE = false
+    -- thread will exit naturally; ensure reference cleared
+    if autoEThread then
+        -- wait a short moment for thread to cleanup
+        task.spawn(function()
+            task.wait(0.2)
+            autoEThread = nil
+        end)
+    end
+    updateHUD("Auto Press E", false)
+end
+
+-- WalkSpeed (throttled writes) with save/restore on toggles/respawn
+local originalWalkSpeed = nil
+local function setPlayerWalkSpeed(value)
+    pcall(function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = value end
+    end)
+end
+
+-- heartbeat loop to maintain walkspeed while enabled
 do
     local acc = 0
     keep(RunService.Heartbeat:Connect(function(dt)
@@ -443,16 +468,28 @@ do
         acc = 0
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.WalkSpeed ~= FEATURE.WalkValue then
-                hum.WalkSpeed = FEATURE.WalkValue
+            if hum then
+                if not originalWalkSpeed then originalWalkSpeed = hum.WalkSpeed end
+                if hum.WalkSpeed ~= FEATURE.WalkValue then
+                    hum.WalkSpeed = FEATURE.WalkValue
+                end
             end
         end)
     end))
 end
 
--- ======================
--- Aimbot (safe: checks focus, uses Lerp smoothing)
--- ======================
+-- restore walk speed on disable or when humanoid removed
+local function restoreWalkSpeed()
+    pcall(function()
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum and originalWalkSpeed then
+            hum.WalkSpeed = originalWalkSpeed
+        end
+    end)
+    originalWalkSpeed = nil
+end
+
+-- Aimbot (safe: checks focus, uses Lerp smoothing, aims only when allowed)
 local function angleBetweenVectors(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
@@ -462,6 +499,7 @@ end
 
 keep(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
+    if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
     -- don't aim while typing into textboxes
     if UIS:GetFocusedTextBox() then return end
     safeWaitCamera()
@@ -471,42 +509,78 @@ keep(RunService.RenderStepped:Connect(function()
     local bestAngle = 1e9
 
     for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Team and LocalPlayer.Team and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") then
-            local head = p.Character.Head
-            local dir = (head.Position - Camera.CFrame.Position)
-            local ang = angleBetweenVectors(Camera.CFrame.LookVector, dir.Unit)
-            if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
-                bestHead = head
-                bestAngle = ang
+        if p ~= LocalPlayer then
+            local okTarget = false
+            -- team check: if teams exist, only target other teams
+            if p.Team and LocalPlayer.Team then
+                okTarget = (p.Team ~= LocalPlayer.Team)
+            else
+                okTarget = true -- no teams set; target anyone else
+            end
+            if okTarget and p.Character then
+                local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
+                if head then
+                    local dir = (head.Position - Camera.CFrame.Position)
+                    local ang = angleBetweenVectors(Camera.CFrame.LookVector, dir.Unit)
+                    if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
+                        bestHead = head
+                        bestAngle = ang
+                    end
+                end
             end
         end
     end
 
-    if bestHead then
-        local dir = (bestHead.Position - Camera.CFrame.Position).Unit
-        local currentLook = Camera.CFrame.LookVector
-        local blended = currentLook:Lerp(dir, clamp(FEATURE.AIM_LERP, 0, 1))
-        local pos = Camera.CFrame.Position
-        local targetCFrame = CFrame.new(pos, pos + blended)
-        Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, clamp(FEATURE.AIM_LERP, 0.05, 0.9))
+    if bestHead and bestHead.Parent then
+        local success, err = pcall(function()
+            local dir = (bestHead.Position - Camera.CFrame.Position).Unit
+            local currentLook = Camera.CFrame.LookVector
+            local blended = currentLook:Lerp(dir, clamp(FEATURE.AIM_LERP, 0, 1))
+            local pos = Camera.CFrame.Position
+            local targetCFrame = CFrame.new(pos, pos + blended)
+            -- set camera gently
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, clamp(FEATURE.AIM_LERP, 0.05, 0.9))
+        end)
+        if not success then
+            -- if camera write fails, disable aimbot to be safe
+            warn("Aimbot camera write error:", err)
+            FEATURE.Aimbot = false
+            updateHUD("Aimbot", false)
+        end
     end
 end))
 
--- ======================
 -- Register Toggles (UI + callbacks)
--- ======================
 registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
 end)
 registerToggle("Auto Press E", "AutoE", function(state)
-    if state then startAutoE() end
+    if state then
+        startAutoE()
+    else
+        stopAutoE()
+    end
 end)
-registerToggle("WalkSpeed", "WalkEnabled")
-registerToggle("Aimbot", "Aimbot")
+registerToggle("WalkSpeed", "WalkEnabled", function(state)
+    if state then
+        -- when enabling, we start enforcing walk speed in heartbeat loop
+        -- store original if possible
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and not originalWalkSpeed then originalWalkSpeed = hum.WalkSpeed end
+        end)
+    else
+        restoreWalkSpeed()
+    end
+end)
+registerToggle("Aimbot", "Aimbot", function(state)
+    if not state then
+        -- nothing special; RenderStepped loop will stop acting
+    end
+end)
 
 -- Initialize HUD with current states
 for k,_ in pairs(FEATURE) do
-    -- only for the HUD entries we have
     local display = nil
     if k == "ESP" then display = "ESP" end
     if k == "AutoE" then display = "Auto Press E" end
@@ -515,30 +589,42 @@ for k,_ in pairs(FEATURE) do
     if display then updateHUD(display, FEATURE[k]) end
 end
 
--- ======================
 -- Hotkeys (F1-F4)
--- ======================
 keep(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if input.KeyCode == Enum.KeyCode.F1 then
+    if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then
         ToggleCallbacks.ESP(not FEATURE.ESP)
-    elseif input.KeyCode == Enum.KeyCode.F2 then
+    elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then
         ToggleCallbacks.AutoE(not FEATURE.AutoE)
-    elseif input.KeyCode == Enum.KeyCode.F3 then
+    elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then
         ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 then
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then
         ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
     end
 end))
 
--- ======================
 -- Cleanup (character remove & global)
--- ======================
 keep(LocalPlayer.CharacterRemoving:Connect(function()
     -- clear ESP highlights
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
     -- disconnect tracked connections
     clearConnections()
+    -- restore walk speed
+    restoreWalkSpeed()
+    -- stop AutoE
+    stopAutoE()
+end))
+
+-- Ensure we restore walk speed on respawn as well
+keep(LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if FEATURE.WalkEnabled then
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and originalWalkSpeed == nil then originalWalkSpeed = hum.WalkSpeed end
+            if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+    end
 end))
 
 -- Provide a global cleanup hook for re-run in some executors
@@ -552,7 +638,10 @@ if _G then
             local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
             if gh then gh:Destroy() end
         end)
+        -- restore walk speed and stop autoE
+        restoreWalkSpeed()
+        stopAutoE()
     end
 end
 
-print("✅ TPB Full Script loaded (Final). Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD.")
+print("✅ TPB Full Script loaded (Patched). Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD.")
