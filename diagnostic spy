@@ -1,23 +1,203 @@
--- === Ammo Value Spy ===
-local plr = game.Players.LocalPlayer
+-- === Combined Reload Spy (Values + Remote calls) ===
+-- Jalankan terpisah dari script utama.
+-- Equip senjata lalu lakukan reload normal (R). Cek Developer Console (F9).
 
--- Cari semua IntValue / NumberValue di character dan backpack
-local function scan()
-    for _,v in ipairs(plr.Character:GetDescendants()) do
-        if v:IsA("IntValue") or v:IsA("NumberValue") then
-            v:GetPropertyChangedSignal("Value"):Connect(function()
-                print("[AmmoSpy]", v:GetFullName(), "=", v.Value)
+local Players = game:GetService("Players")
+local plr = Players.LocalPlayer
+
+-- pretty print args
+local function dumpArgs(...)
+    local args = {...}
+    local parts = {}
+    for i, v in ipairs(args) do
+        local t = typeof(v)
+        if t == "Instance" then
+            table.insert(parts, ("[%d]=Instance(%s)"):format(i, v:GetFullName()))
+        elseif t == "table" then
+            local s = "{"
+            for k, vv in pairs(v) do
+                s = s .. tostring(k) .. "=" .. tostring(vv) .. ","
+            end
+            s = s .. "}"
+            table.insert(parts, ("[%d]=%s"):format(i, s))
+        else
+            table.insert(parts, ("[%d]=%s"):format(i, tostring(v)))
+        end
+    end
+    return table.concat(parts, " | ")
+end
+
+-- safe print wrapper
+local function sprint(...)
+    pcall(function() print("[RELOAD-SPY]", ...) end)
+end
+
+-- Hook namecall for FireServer/InvokeServer if possible
+local hook_ok, old_namecall
+hook_ok, old_namecall = pcall(function()
+    return hookmetamethod or hookmetamethod -- just test existence in exploit env
+end)
+
+-- We'll attempt to hook __namecall once and route events to a list of watched objects
+local watchedRemotes = {} -- set of remotes to log (key = instance)
+
+-- Internal namecall hook (if environment supports hookmetamethod)
+local namecall_hooked = false
+local oldNamecall
+local function tryHookNamecall()
+    if namecall_hooked then return true end
+    if type(hookmetamethod) ~= "function" then
+        -- some envs provide getrawmetatable + hookfunction instead; we still try a safer fallback below per-remote
+        return false
+    end
+
+    local mt = getrawmetatable(game)
+    oldNamecall = mt and mt.__namecall
+    if not oldNamecall then return false end
+
+    setreadonly(mt, false)
+    local new = function(self, ...)
+        local method = getnamecallmethod()
+        if (method == "FireServer" or method == "InvokeServer") and watchedRemotes[self] then
+            local infoType = self.ClassName .. " " .. (self:GetFullName())
+            pcall(function()
+                if method == "FireServer" then
+                    sprint("[CALL] RemoteEvent FireServer ->", infoType, "Args:", dumpArgs(...))
+                else
+                    sprint("[CALL] RemoteFunction InvokeServer ->", infoType, "Args:", dumpArgs(...))
+                end
+            end)
+        end
+        return oldNamecall(self, ...)
+    end
+    mt.__namecall = new
+    setreadonly(mt, true)
+    namecall_hooked = true
+    sprint("✅ __namecall hooked for watched remotes")
+    return true
+end
+
+-- Fallback: per-remote hook using hookfunction on the function itself (if available)
+local perRemoteFallback = {}
+local function tryHookRemoteDirect(remote)
+    if not remote then return end
+    if perRemoteFallback[remote] then return end
+    -- try hooking FireServer directly
+    local suc = pcall(function()
+        if type(remote.FireServer) == "function" and hookfunction then
+            local old = remote.FireServer
+            perRemoteFallback[remote] = hookfunction(remote.FireServer, function(self, ...)
+                sprint("[CALL-Fallback] RemoteEvent FireServer ->", self:GetFullName(), "Args:", dumpArgs(...))
+                return old(self, ...)
+            end)
+        end
+    end)
+    -- try hooking InvokeServer similarly
+    pcall(function()
+        if type(remote.InvokeServer) == "function" and hookfunction then
+            local old = remote.InvokeServer
+            perRemoteFallback[remote] = hookfunction(remote.InvokeServer, function(self, ...)
+                sprint("[CALL-Fallback] RemoteFunction InvokeServer ->", self:GetFullName(), "Args:", dumpArgs(...))
+                return old(self, ...)
+            end)
+        end
+    end)
+    -- note: some exploits may not allow hookfunction on bound methods; that's fine.
+end
+
+-- Monitor values (ValueBase types) in a tool
+local function monitorValues(tool)
+    if not tool or not tool.GetDescendants then return end
+    for _, v in ipairs(tool:GetDescendants()) do
+        if v:IsA("ValueBase") then
+            -- connect Changed safely
+            pcall(function()
+                v.Changed:Connect(function(newVal)
+                    sprint("[VALUE] ", tool.Name, "/", v.Name, " ->", tostring(newVal))
+                end)
             end)
         end
     end
-    for _,v in ipairs(plr.Backpack:GetDescendants()) do
-        if v:IsA("IntValue") or v:IsA("NumberValue") then
-            v:GetPropertyChangedSignal("Value"):Connect(function()
-                print("[AmmoSpy]", v:GetFullName(), "=", v.Value)
-            end)
+    -- also watch future value additions
+    pcall(function()
+        tool.DescendantAdded:Connect(function(obj)
+            if obj:IsA("ValueBase") then
+                sprint("[VALUE-ADDED] ", tool.Name, "/", obj.Name, obj.ClassName)
+                pcall(function()
+                    obj.Changed:Connect(function(nv)
+                        sprint("[VALUE] ", tool.Name, "/", obj.Name, " ->", tostring(nv))
+                    end)
+                end)
+            end
+        end)
+    end)
+end
+
+-- Watch remotes in tool; populate watchedRemotes and attempt to hook
+local function monitorRemotes(tool)
+    if not tool or not tool.GetDescendants then return end
+    for _, obj in ipairs(tool:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            if obj.Name:lower():find("reload") or true then
+                -- we watch all remotes (more verbose) but prioritize ones with 'reload' in name
+                watchedRemotes[obj] = true
+                sprint("[REMOTE-FOUND] ", tool.Name, "/", obj.Name, obj.ClassName)
+                -- try hooking via namecall if possible; otherwise per-remote
+                if not tryHookNamecall() then
+                    tryHookRemoteDirect(obj)
+                end
+            end
+        end
+    end
+
+    -- watch future added remotes
+    pcall(function()
+        tool.DescendantAdded:Connect(function(obj)
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                watchedRemotes[obj] = true
+                sprint("[REMOTE-ADDED] ", tool.Name, "/", obj.Name, obj.ClassName)
+                if not tryHookNamecall() then
+                    tryHookRemoteDirect(obj)
+                end
+            end
+        end)
+    end)
+end
+
+-- Monitor a tool: values + remotes + print contents
+local function monitorTool(tool)
+    if not tool or not tool.GetFullName then return end
+    sprint("=== START MONITOR TOOL:", tool:GetFullName(), "===")
+    -- print immediate useful children
+    for _, child in ipairs(tool:GetChildren()) do
+        if child:IsA("ValueBase") then
+            sprint("  Value:", child.Name, child.ClassName, "=", tostring(child.Value))
+        else
+            sprint("  Child:", child.Name, child.ClassName)
+        end
+    end
+    monitorValues(tool)
+    monitorRemotes(tool)
+end
+
+-- When player equips a tool (ChildAdded in character)
+plr.CharacterAdded:Connect(function(char)
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            -- small delay to let tool populate
+            task.wait(0.1)
+            monitorTool(child)
+        end
+    end)
+end)
+
+-- Also monitor current tools if already equipped
+if plr.Character then
+    for _, child in ipairs(plr.Character:GetChildren()) do
+        if child:IsA("Tool") then
+            monitorTool(child)
         end
     end
 end
 
-scan()
-print("✅ AmmoSpy aktif, tembak & reload untuk lihat perubahan value.")
+sprint("✅ Combined Reload Spy is running. Equip tool, press reload, then paste console output here.")
