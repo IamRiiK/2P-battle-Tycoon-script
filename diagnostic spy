@@ -1,13 +1,27 @@
--- ==== Diagnostic: Spy Reload RemoteEvent ====
+-- === Wide Remote Spy ===
+-- Jalankan terpisah, jangan dicampur dengan script utama.
+-- Tujuan: deteksi remote mana yang dipakai saat reload manual.
+
 for _,v in ipairs(game:GetDescendants()) do
-    if v:IsA("RemoteEvent") and v.Name == "Reload" then
+    if v:IsA("RemoteEvent") then
         local old; old = hookfunction(v.FireServer, function(self, ...)
             local args = {...}
-            warn("[Spy] Reload RemoteEvent dipanggil!", self:GetFullName())
-            for i, a in ipairs(args) do
-                warn("  Arg["..i.."] =", a, typeof(a))
+            warn("[Spy-RemoteEvent]", self:GetFullName())
+            for i,a in ipairs(args) do
+                warn("   Arg["..i.."] =", a, typeof(a))
+            end
+            return old(self, ...)
+        end)
+    elseif v:IsA("RemoteFunction") then
+        local old; old = hookfunction(v.InvokeServer, function(self, ...)
+            local args = {...}
+            warn("[Spy-RemoteFunction]", self:GetFullName())
+            for i,a in ipairs(args) do
+                warn("   Arg["..i.."] =", a, typeof(a))
             end
             return old(self, ...)
         end)
     end
 end
+
+warn("✅ Remote Spy aktif. Sekarang lakukan reload manual, lalu cek Developer Console (F9).")
