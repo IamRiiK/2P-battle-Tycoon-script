@@ -177,29 +177,100 @@ MinBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Make the MainFrame draggable by title bar (mouse & touch)
+-- Make the MainFrame draggable by title bar (mouse & touch) -- FIXED
 do
     local dragging = false
     local dragInput = nil
     local dragStart = nil
-    local startPos = nil
+    local startPosPixels = nil
 
     local function getScreenSize()
         local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
         return viewportSize
     end
 
+    local function toPixels(udim2)
+        local screen = getScreenSize()
+        local x = udim2.X.Offset + udim2.X.Scale * screen.X
+        local y = udim2.Y.Offset + udim2.Y.Scale * screen.Y
+        return Vector2.new(x, y)
+    end
+
     local function onInputBegan(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragInput = input
-            dragStart = input.Position
-            startPos = MainFrame.Position
-            -- capture the input changed event
-            if input.UserInputType == Enum.UserInputType.Touch then
-                -- Touch doesn't fire MouseMovement; rely on InputChanged below (Touch)
+            -- Use input.Position when available; otherwise fallback to mouse location
+            dragStart = (input.Position and Vector2.new(input.Position.X, input.Position.Y)) or UIS:GetMouseLocation()
+            startPosPixels = toPixels(MainFrame.Position)
+            -- ensure we stop dragging if the input ends on the input object itself
+            if input.Changed then
+                input.Changed:Connect(function(property)
+                    if property == "UserInputState" and input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                        dragInput = nil
+                    end
+                end)
             end
         end
     end
+
+    local function getInputPos(input)
+        if input and input.Position then
+            return Vector2.new(input.Position.X, input.Position.Y)
+        else
+            return UIS:GetMouseLocation()
+        end
+    end
+
+    local function onInputChanged(input)
+        if not dragging then return end
+        -- only act for the active drag input
+        if input ~= dragInput and input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        local currentPos = getInputPos(input)
+        local delta = currentPos - dragStart
+        local newX = math.floor(startPosPixels.X + delta.X)
+        local newY = math.floor(startPosPixels.Y + delta.Y)
+
+        -- clamp to viewport so frame can't be dragged completely off-screen
+        local screen = getScreenSize()
+        local frameSize = Vector2.new(MainFrame.AbsoluteSize.X, MainFrame.AbsoluteSize.Y)
+        newX = clamp(newX, 0, math.max(0, screen.X - frameSize.X))
+        newY = clamp(newY, 0, math.max(0, screen.Y - frameSize.Y))
+
+        MainFrame.Position = UDim2.new(0, newX, 0, newY)
+    end
+
+    local function onInputEnded(input)
+        if input == dragInput then
+            dragging = false
+            dragInput = nil
+        end
+    end
+
+    -- connect input began on TitleBar and DragHandle
+    TitleBar.InputBegan:Connect(onInputBegan)
+    DragHandle.InputBegan:Connect(onInputBegan)
+
+    -- also listen for InputEnded from those GUI objects as safety
+    TitleBar.InputEnded:Connect(onInputEnded)
+    DragHandle.InputEnded:Connect(onInputEnded)
+
+    -- global listeners for movement / end
+    keep(UIS.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            onInputChanged(input)
+        end
+    end))
+
+    keep(UIS.InputEnded:Connect(function(input)
+        onInputEnded(input)
+    end))
+end
+
 
     local function onInputChanged(input)
         if not dragging then return end
