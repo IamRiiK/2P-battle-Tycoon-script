@@ -1,27 +1,23 @@
--- === Wide Remote Spy ===
--- Jalankan terpisah, jangan dicampur dengan script utama.
--- Tujuan: deteksi remote mana yang dipakai saat reload manual.
+-- === Ammo Value Spy ===
+local plr = game.Players.LocalPlayer
 
-for _,v in ipairs(game:GetDescendants()) do
-    if v:IsA("RemoteEvent") then
-        local old; old = hookfunction(v.FireServer, function(self, ...)
-            local args = {...}
-            warn("[Spy-RemoteEvent]", self:GetFullName())
-            for i,a in ipairs(args) do
-                warn("   Arg["..i.."] =", a, typeof(a))
-            end
-            return old(self, ...)
-        end)
-    elseif v:IsA("RemoteFunction") then
-        local old; old = hookfunction(v.InvokeServer, function(self, ...)
-            local args = {...}
-            warn("[Spy-RemoteFunction]", self:GetFullName())
-            for i,a in ipairs(args) do
-                warn("   Arg["..i.."] =", a, typeof(a))
-            end
-            return old(self, ...)
-        end)
+-- Cari semua IntValue / NumberValue di character dan backpack
+local function scan()
+    for _,v in ipairs(plr.Character:GetDescendants()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            v:GetPropertyChangedSignal("Value"):Connect(function()
+                print("[AmmoSpy]", v:GetFullName(), "=", v.Value)
+            end)
+        end
+    end
+    for _,v in ipairs(plr.Backpack:GetDescendants()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            v:GetPropertyChangedSignal("Value"):Connect(function()
+                print("[AmmoSpy]", v:GetFullName(), "=", v.Value)
+            end)
+        end
     end
 end
 
-warn("✅ Remote Spy aktif. Sekarang lakukan reload manual, lalu cek Developer Console (F9).")
+scan()
+print("✅ AmmoSpy aktif, tembak & reload untuk lihat perubahan value.")
