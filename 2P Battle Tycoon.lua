@@ -2,7 +2,8 @@
 -- Features: Draggable UI + HUD + ESP + AutoE + WalkSpeed + Aimbot
 -- Fixes applied: per-player connection mapping, drag connection leak fix,
 -- walkspeed saved per-character, improved ESP lifecycle, safer camera writes,
--- AutoE cleanup simplification, weak-key esp table, humanoid health checks
+-- AutoE cleanup simplification, weak-key esp table, humanoid health checks,
+-- fixed ESP distance-culling and accidental removal of per-player listeners
 -- CREDIT: RiiK (RiiK26) —
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -11,9 +12,7 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -42,7 +41,6 @@ local FEATURE = {
     AIM_HOLD = false, -- if true, aimbot only while right mouse held
 }
 
-local MAX_ESP_DISTANCE = 250 -- studs
 local WALK_UPDATE_INTERVAL = 0.12 -- seconds
 
 -- Connection tracking: persistent vs per-player
@@ -426,11 +424,23 @@ do
     end)
 end
 
--- ESP System (Highlight AlwaysOnTop, team colors, distance cull)
+-- ESP System (Highlight AlwaysOnTop, team colors)
 -- use weak-key table so players can be GC'd if necessary
 local espObjects = setmetatable({}, { __mode = "k" })
-local MAX_ESP_DIST_SQ = MAX_ESP_DISTANCE * MAX_ESP_DISTANCE
 
+local function rootPartOfCharacter(char)
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+end
+
+local function getESPColor(p)
+    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
+        return Color3.fromRGB(0,200,0) -- green for team
+    else
+        return Color3.fromRGB(200,40,40) -- red for enemy
+    end
+end
+
+-- Clear only highlight objects; do NOT remove per-player listeners here
 local function clearESPForPlayer(p)
     if not p then return end
     local list = espObjects[p]
@@ -442,20 +452,6 @@ local function clearESPForPlayer(p)
         end
         espObjects[p] = nil
     end
-    -- also clear per-player connections
-    clearConnectionsForPlayer(p)
-end
-
-local function getESPColor(p)
-    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
-        return Color3.fromRGB(0,200,0) -- green for team
-    else
-        return Color3.fromRGB(200,40,40) -- red for enemy
-    end
-end
-
-local function rootPartOfCharacter(char)
-    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
 end
 
 local function updateESPColorForPlayer(p)
@@ -469,33 +465,47 @@ local function updateESPColorForPlayer(p)
     end
 end
 
+-- avoid thrash by small debounce per player
+local lastRefresh = setmetatable({}, { __mode = "k" })
+local MIN_REFRESH_INTERVAL = 0.12
+
+local function shouldRefreshForPlayer(p)
+    local t = tick()
+    local last = lastRefresh[p] or 0
+    if t - last < MIN_REFRESH_INTERVAL then return false end
+    lastRefresh[p] = t
+    return true
+end
+
 local function createESPForPlayer(p)
-    clearESPForPlayer(p)
-    if not p.Character then return end
-    local root = rootPartOfCharacter(p.Character)
-    if not root then return end
+    if not p then return end
+    if not FEATURE.ESP then return end
 
-    local hum = p.Character:FindFirstChildOfClass("Humanoid")
-    if hum and hum.Health <= 0 then return end -- don't ESP dead
+    -- avoid thrash
+    if not shouldRefreshForPlayer(p) then return end
 
-    safeWaitCamera()
-    if not Camera or not Camera.CFrame then return end
-    local camPos = Camera.CFrame.Position
-    local diff = root.Position - camPos
-    local distSq = diff:Dot(diff)
-    if distSq > MAX_ESP_DIST_SQ then
+    -- if there's already an ESP object, update color and return
+    if espObjects[p] then
+        updateESPColorForPlayer(p)
         return
     end
 
+    local char = p.Character
+    if not char then return end
+    local root = rootPartOfCharacter(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return end -- skip dead
+
+    -- create highlight
     local hl = Instance.new("Highlight")
     hl.Name = "TPB_BoxESP"
-    hl.Adornee = p.Character
+    hl.Adornee = char
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.OutlineTransparency = 0
     hl.OutlineColor = Color3.fromRGB(255,255,255)
     hl.FillTransparency = 0.7
     hl.FillColor = getESPColor(p)
-    hl.Parent = p.Character
+    hl.Parent = char -- safe to parent to character so it's removed on respawn
 
     espObjects[p] = { hl }
 end
@@ -508,59 +518,65 @@ local function refreshESPForPlayer(p)
     end
 end
 
--- We will keep one persistent Players.PlayerAdded listener (registered on enableESP first time)
-local playersAddedConn = nil
-local playersRemovingConn = nil
-local playersPropertyConn = nil -- unused here but reserved
+-- Ensure we only attach per-player listeners once
+local function ensurePlayerListeners(p)
+    if not p then return end
+    if PerPlayerConnections[p] then return end -- already set
 
-local function onPlayerCharacterAdded(p)
-    -- wait for relevant parts
-    local char = p.Character
-    if not char then return end
-    -- wait a bit for root/humanoid, but bounded
-    char:WaitForChild("HumanoidRootPart", 2)
-    task.wait(0.05)
-    refreshESPForPlayer(p)
-    -- add character removal listener per-player
-    addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+    -- CharacterAdded: create ESP when char ready
+    addPerPlayerConnection(p, p.CharacterAdded:Connect(function()
+        -- small wait for parts to stream in
+        local char = p.Character
+        if char then
+            char:WaitForChild("HumanoidRootPart", 2)
+            task.wait(0.06)
+            refreshESPForPlayer(p)
+            -- listen for removal
+            addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+        end
+    end))
+
+    -- If they already have a character at registration, hook removal and possibly create ESP
+    if p.Character then
+        addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+    end
+
+    -- Team change: update color
+    addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
 end
 
+local playersAddedConn = nil
+local playersRemovingConn = nil
+
 local function enableESP()
-    -- only set listeners once as persistent
-    -- clear per-player connections & existing esp then re-add for all players
-    clearAllPerPlayerConnections()
+    -- Ensure listeners exist for all players, and attempt to create ESP
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
+            ensurePlayerListeners(p)
             refreshESPForPlayer(p)
-            if p.Character then
-                addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
-            end
-            -- per-player property listener for team changes
-            addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
-            -- per-player characteradded
-            addPerPlayerConnection(p, p.CharacterAdded:Connect(function() task.wait(0.15) refreshESPForPlayer(p) end))
         end
     end
 
     if not playersAddedConn then
         playersAddedConn = keepPersistent(Players.PlayerAdded:Connect(function(p)
             if p ~= LocalPlayer then
+                ensurePlayerListeners(p)
+                task.wait(0.12)
                 refreshESPForPlayer(p)
-                addPerPlayerConnection(p, p.CharacterAdded:Connect(function() task.wait(0.15) refreshESPForPlayer(p) end))
-                addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
-                addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
             end
         end))
     end
 
     if not playersRemovingConn then
-        playersRemovingConn = keepPersistent(Players.PlayerRemoving:Connect(function(p) clearESPForPlayer(p) end))
+        playersRemovingConn = keepPersistent(Players.PlayerRemoving:Connect(function(p)
+            clearESPForPlayer(p)
+            clearConnectionsForPlayer(p)
+        end))
     end
 end
 
 local function disableESP()
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-    -- do not clear persistent UI/input connections here
 end
 
 -- Auto Press E
@@ -578,9 +594,7 @@ local function startAutoE()
     autoEThread = task.spawn(function()
         while FEATURE.AutoE and not autoEStop do
             pcall(function()
-                -- safe/clamped interval
                 local interval = clamp(FEATURE.AutoEInterval or 0.5, 0.05, 5)
-                -- send press and release
                 pcall(function()
                     VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
                     VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
@@ -597,11 +611,10 @@ local function stopAutoE()
     FEATURE.AutoE = false
     autoEStop = true
     updateHUD("Auto Press E", false)
-    -- thread will clear autoEThread itself
 end
 
 -- WalkSpeed (throttled writes) with save/restore per-character
-local OriginalWalkByCharacter = {} -- character -> originalWalk
+local OriginalWalkByCharacter = {}
 
 local function setPlayerWalkSpeedForCharacter(char, value)
     if not char then return end
@@ -631,7 +644,6 @@ do
     end))
 end
 
--- restore walk speed for specific character
 local function restoreWalkSpeedForCharacter(char)
     if not char then return end
     pcall(function()
@@ -664,7 +676,6 @@ end
 keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
-    -- don't aim while typing into textboxes
     if UIS:GetFocusedTextBox() then return end
     safeWaitCamera()
     if not Camera or not Camera.CFrame then return end
@@ -683,7 +694,6 @@ keepPersistent(RunService.RenderStepped:Connect(function()
             if okTarget and p.Character then
                 local hum = p.Character:FindFirstChildOfClass("Humanoid")
                 if not hum or hum.Health <= 0 then
-                    -- skip dead
                 else
                     local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
                     if head then
@@ -711,12 +721,10 @@ keepPersistent(RunService.RenderStepped:Connect(function()
             local blended = currentLook:Lerp(dir, lerpVal)
             local pos = Camera.CFrame.Position
             local targetCFrame = CFrame.new(pos, pos + blended)
-            -- Attempt safe write. This may error in some environments.
             Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, lerpVal)
         end)
         if not success then
             warn("Aimbot camera write error:", err)
-            -- disable aimbot after repeated errors could be implemented; for now, disable to avoid spam
             FEATURE.Aimbot = false
             updateHUD("Aimbot", false)
         end
@@ -737,7 +745,6 @@ registerToggle("Auto Press E", "AutoE", function(state)
 end)
 registerToggle("WalkSpeed", "WalkEnabled", function(state)
     if state then
-        -- capture current character's original if possible
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then
@@ -747,7 +754,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
         end)
         updateHUD("WalkSpeed", true)
     else
-        -- restore for current character
         restoreWalkSpeedForCharacter(LocalPlayer.Character)
     end
 end)
@@ -782,10 +788,6 @@ end))
 
 -- Cleanup for character remove (only local player character cleanup)
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
-    -- clear ESP highlights for others when our character is removed (some highlights may reference our camera)
-    for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-    -- clear only per-player connections for others (we keep persistent ones intact)
-    clearAllPerPlayerConnections()
     -- restore walk speed for this character
     restoreWalkSpeedForCharacter(char)
     -- stop AutoE
@@ -802,9 +804,7 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
     end
-    -- If ESP enabled, refresh per-player esp for characters that just loaded
     if FEATURE.ESP then
-        -- small delay to allow other characters to initialize
         task.wait(0.2)
         for _,p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then
@@ -818,19 +818,16 @@ end))
 if _G then
     _G.__TPB_CLEANUP = function()
         for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-        -- destroy GUIs
         pcall(function()
             local g = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
             if g then g:Destroy() end
             local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
             if gh then gh:Destroy() end
         end)
-        -- restore walks and stop autoE
         restoreAllWalkSpeeds()
         stopAutoE()
-        -- clear all connections (persistent and player)
         clearAllConnections()
     end
 end
 
-print("✅ TPB Refactor patched and loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
+print("✅ TPB Refactor patched (ESP fixes) loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
