@@ -450,3 +450,54 @@ RunService.RenderStepped:Connect(function()
         end
     end
     if best then
+        local dir = (best.Position - Camera.CFrame.Position).Unit
+        local newLook = Camera.CFrame.LookVector:Lerp(dir, FEATURE.AIM_LERP)
+        local pos = Camera.CFrame.Position
+        Camera.CFrame = CFrame.new(pos, pos + newLook)
+    end
+end)
+
+-- ==========
+-- Register Toggles
+-- ==========
+registerToggle("ESP", "ESP", function(state)
+    if state then enableESP() else disableESP() end
+end)
+registerToggle("Auto Press E", "AutoE", function(state)
+    if state then startAutoE() end
+end)
+registerToggle("WalkSpeed", "WalkEnabled")
+registerToggle("Aimbot", "Aimbot")
+-- Quick Reload toggle removed
+
+-- ==========
+-- Hotkeys
+-- ==========
+UIS.InputBegan:Connect(function(input,gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F1 then
+        ToggleCallbacks.ESP(not FEATURE.ESP)
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+        ToggleCallbacks.AutoE(not FEATURE.AutoE)
+    elseif input.KeyCode == Enum.KeyCode.F3 then
+        ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
+    elseif input.KeyCode == Enum.KeyCode.F4 then
+        ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
+    end
+end)
+
+-- ==========
+-- Cleanup on unload / character remove
+-- ==========
+Players.PlayerRemoving:Connect(function(p)
+    if espObjects[p] then clearESP(p) end
+end)
+
+LocalPlayer.CharacterRemoving:Connect(function()
+    -- Clear local esp objects on respawn
+    for p,_ in pairs(espObjects) do
+        clearESP(p)
+    end
+end)
+
+-- End of script
