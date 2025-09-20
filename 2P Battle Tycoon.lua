@@ -1,6 +1,6 @@
--- 2P Battle Tycoon — Full Fixed Script (Final v3 + Instant QuickReload)
--- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4) + Instant QuickReload
--- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, F5=QuickReload toggle, LeftAlt=Toggle UI/HUD
+-- 2P Battle Tycoon — Full Fixed Script (Final v3 + Instant QuickReload Universal)
+-- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4) + Instant QuickReload (fire all reload remotes)
+-- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, F5=QuickReload toggle, LeftAlt=Toggle UI/HUD, R=QuickReload
 --Credit to RiiK @RiiK26--
 
 -- Ensure game loaded
@@ -215,7 +215,7 @@ local function updateHUD(name, state)
     end
 end
 
--- LeftAlt toggle UI/HUD
+-- LeftAlt toggle UI/HUD (kept separate to avoid interfering)
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
@@ -228,7 +228,6 @@ end)
 -- Quick Reload (manual + instant auto loop will use FEATURE.QuickReload)
 -- Inserted here so updateHUD and UI exist
 -- ==========
--- toggle state is FEATURE.QuickReload (ke UI/hud)
 -- tabel max ammo per senjata
 local MaxAmmo = {
     SMG = 30,
@@ -249,6 +248,24 @@ local function getCurrentToolAmmo()
     end
 end
 
+-- fungsi kirim semua RemoteEvent di Tool yang berisi kata 'reload'
+local function fireAllReloadRemotes(tool)
+    if not tool then return end
+    for _, obj in ipairs(tool:GetDescendants()) do
+        if obj:IsA("RemoteEvent") and string.find(obj.Name:lower(), "reload") then
+            pcall(function() obj:FireServer() end)
+            print("📡 FireServer ke Remote:", obj:GetFullName())
+        end
+    end
+    -- juga cek direct children (in case name exactly 'Reload')
+    for _, obj in ipairs(tool:GetChildren()) do
+        if obj:IsA("RemoteEvent") and string.find(obj.Name:lower(), "reload") then
+            pcall(function() obj:FireServer() end)
+            print("📡 FireServer ke Remote:", obj:GetFullName())
+        end
+    end
+end
+
 -- fungsi quick reload manual (R)
 local function quickReloadManual()
     local tool, ammo = getCurrentToolAmmo()
@@ -257,6 +274,9 @@ local function quickReloadManual()
         if max then
             pcall(function() ammo.Value = max end)
             print("⚡ QuickReload manual:", tool.Name, "->", ammo.Value)
+
+            -- kirim semua remote reload yang relevan agar server unlock reload
+            pcall(function() fireAllReloadRemotes(tool) end)
         end
     end
 end
@@ -271,7 +291,7 @@ local function stopReloadAnimation()
     for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
         local anim = track.Animation
         if anim and string.lower(anim.Name):find("reload") then
-            track:Stop()
+            pcall(function() track:Stop() end)
             print("🛑 Reload animation dibatalkan:", anim.Name)
         end
     end
@@ -287,7 +307,6 @@ UIS.InputBegan:Connect(function(input, gp)
         print("🔀 QuickReload:", FEATURE.QuickReload and "ON" or "OFF")
         if FEATURE.QuickReload then
             -- start the instant reload loop (the function defined later will check FEATURE.QuickReload)
-            -- We start it here only to ensure it runs; if started elsewhere, it's safe to call again.
             pcall(function() instantReloadLoop() end)
         end
     end
@@ -537,7 +556,7 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- ==========
--- Instant Quick Reload (final)
+-- Instant Quick Reload (final) — uses fireAllReloadRemotes as fallback
 -- ==========
 local function instantReloadLoop()
     task.spawn(function()
@@ -549,7 +568,7 @@ local function instantReloadLoop()
                 if not tool then return end
 
                 local ammo = tool:FindFirstChild("Ammo")
-                local reloadRemote = tool:FindFirstChild("Reload")
+                -- local reloadRemote = tool:FindFirstChild("Reload") -- no longer required; using fireAllReloadRemotes
 
                 if ammo and ammo:IsA("NumberValue") then
                     if ammo.Value <= 0 then
@@ -557,10 +576,8 @@ local function instantReloadLoop()
                         -- set client-side ammo instantly (cancel animasi reload)
                         pcall(function() ammo.Value = maxAmmo end)
 
-                        -- call remote ke server biar sinkron
-                        if reloadRemote and reloadRemote:IsA("RemoteEvent") then
-                            pcall(function() reloadRemote:FireServer() end)
-                        end
+                        -- call remote(s) to sync server-side reload if available (call any reload-like RemoteEvent)
+                        pcall(function() fireAllReloadRemotes(tool) end)
 
                         -- small delay to avoid tight spam
                         task.wait(FEATURE.ReloadDelay or 0.05)
@@ -588,7 +605,7 @@ registerToggle("Quick Reload", "QuickReload", function(state)
 end)
 
 -- ==========
--- Hotkeys
+-- Hotkeys (kept for backwards compatibility)
 -- ==========
 UIS.InputBegan:Connect(function(input,gp)
     if gp then return end
