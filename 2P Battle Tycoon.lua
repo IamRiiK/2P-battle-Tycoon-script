@@ -1,3 +1,59 @@
+-- 🔥 QUICK RELOAD SYSTEM
+local QuickReloadEnabled = true -- default aktif
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- mapping max ammo (bisa ditambah sesuai kebutuhan)
+local MaxAmmoMap = {
+    ["SMG"] = 30,
+    ["Sniper"] = 1,
+    ["Railgun"] = 3
+}
+
+-- toggle dengan F5
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == Enum.KeyCode.F5 then
+        QuickReloadEnabled = not QuickReloadEnabled
+        warn("⚡ QuickReload: " .. tostring(QuickReloadEnabled))
+    end
+end)
+
+-- cari ammo value dari tool
+local function getAmmoValue(tool)
+    if tool and tool:FindFirstChild("Ammo") and tool.Ammo:IsA("NumberValue") then
+        return tool.Ammo
+    end
+    return nil
+end
+
+-- fungsi quick reload
+local function quickReload(tool)
+    local ammoVal = getAmmoValue(tool)
+    if ammoVal then
+        local maxAmmo = MaxAmmoMap[tool.Name] or ammoVal.Value
+        ammoVal.Value = maxAmmo
+        warn("⚡ QuickReload: " .. tool.Name .. " -> refill " .. maxAmmo)
+    end
+end
+
+-- deteksi tombol reload bawaan (R)
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if not gpe and input.KeyCode == Enum.KeyCode.R then
+        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if tool and QuickReloadEnabled then
+            -- blokir reload bawaan, ganti quick reload
+            quickReload(tool)
+        end
+    end
+end)
+
+-----------------------------------------------------------------
+-- 🔽 SISA SCRIPT UTAMAMU 🔽
+-- 2P Battle Tycoon — Full Fixed Script (Final v3)
+-- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4)
+-- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=A
+-- ... (lanjutkan semua kode utamamu di sini, tanpa diubah) ...
 -- 2P Battle Tycoon — Full Fixed Script (Final v3 + Instant QuickReload Universal)
 -- Dark UI + HUD (show only when UI hidden) + ESP (team auto-update, fixed respawn) + AutoE + WalkSpeed + Aimbot (FOV=8, LERP=0.4) + Instant QuickReload (fire all reload remotes)
 -- Hotkeys: F1=ESP, F2=AutoE, F3=Walk toggle, F4=Aimbot toggle, F5=QuickReload toggle, LeftAlt=Toggle UI/HUD, R=QuickReload
