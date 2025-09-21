@@ -10,6 +10,97 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
+--// UI LIBRARY
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "UIEditor"
+ScreenGui.Parent = game.CoreGui
+
+-- 🔹 Fungsi Universal untuk bikin frame bisa digeser dengan TitleBar
+local function makeDraggable(frame, dragHandle)
+    local UIS = game:GetService("UserInputService")
+    local dragging, dragInput, dragStart, startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
+        end
+    end)
+end
+
+--// UI VALUE EDITOR
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 300, 0, 400)
+MainFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local Title = Instance.new("TextLabel")
+Title.Text = "Value Editor"
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.Parent = MainFrame
+
+makeDraggable(MainFrame, Title)
+
+--// UI PASSES EDITOR
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 250, 0, 350)
+Frame.Position = UDim2.new(0.5, -125, 0.2, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Frame.BorderSizePixel = 0
+Frame.Visible = false
+Frame.Parent = ScreenGui
+
+local Title2 = Instance.new("TextLabel")
+Title2.Text = "Passes Editor"
+Title2.Size = UDim2.new(1, 0, 0, 30)
+Title2.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Title2.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title2.Font = Enum.Font.GothamBold
+Title2.TextSize = 14
+Title2.Parent = Frame
+
+makeDraggable(Frame, Title2)
+
+--// Scroll Container for Passes
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Size = UDim2.new(1, 0, 1, -30)
+ScrollingFrame.Position = UDim2.new(0, 0, 0, 30)
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.ScrollBarThickness = 6
+ScrollingFrame.BackgroundTransparency = 1
+ScrollingFrame.Parent = Frame
+
+
 
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
