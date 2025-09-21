@@ -1,13 +1,17 @@
+
 if not game:IsLoaded() then game.Loaded:Wait() end
+
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 
+
+local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
     Camera = ok and cam or Workspace.CurrentCamera
@@ -817,252 +821,167 @@ if _G then
     end
 end
 
--- ===== Multi-scan Value Editor (scan LocalPlayer / Upgrades / leaderstats / DataFolder) =====
+
+-- ✅ Executor GUI Value Editor (Revised)
+-- Fitur: Edit Cash, Rebirth Points, dll.
+
+-- Ambil service dan player
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Try find the existing 'Content' frame created by your main UI.
-local function resolveContent()
-    if type(Content) == "table" or typeof(Content) == "Instance" then
-        return Content
-    end
-    -- try find by ScreenGui name used in your script
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then
-        pg = Players.LocalPlayer:WaitForChild("PlayerGui", 5)
-    end
-    if pg then
-        local sg = pg:FindFirstChild("TPB_TycoonGUI_Final") or pg:FindFirstChildWhichIsA("ScreenGui")
-        if sg then
-            local mf = sg:FindFirstChild("MainFrame") or sg:FindFirstChild("Main") or sg:FindFirstChildWhichIsA("Frame")
-            if mf then
-                local cont = mf:FindFirstChild("Content") or mf:FindFirstChildWhichIsA("Frame")
-                if cont then return cont end
-            end
-        end
-    end
-    -- fallback: create a silent container under a new ScreenGui (shouldn't be needed)
-    if pg then
-        local sg2 = Instance.new("ScreenGui")
-        sg2.Name = "TPB_AutoValueEditor_Fallback"
-        sg2.ResetOnSpawn = false
-        sg2.Parent = pg
-        local f = Instance.new("Frame", sg2)
-        f.Name = "ContentFallback"
-        f.Size = UDim2.new(0,200,0,300)
-        f.Position = UDim2.new(0,20,0,120)
-        f.BackgroundTransparency = 0.6
-        return f
-    end
-    return nil
-end
+-- Buat ScreenGui utama
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ValueEditor_GUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
 
-local ContentFrame = resolveContent()
-if not ContentFrame then
-    warn("[ValueEditor] Could not find or create Content frame for UI. Aborting editor init.")
-    return
-end
+-- Frame utama
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 400, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 
--- keep track of what we've created so we don't duplicate
-local created = setmetatable({}, { __mode = "k" }) -- keys are Instance objects
+-- Judul
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Text = "🔧 Value Editor"
+Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
 
-local function isNumericValue(inst)
-    if not inst then return false end
-    if inst:IsA("IntValue") or inst:IsA("NumberValue") then return true end
-    if inst:IsA("StringValue") then
-        return tonumber(inst.Value) ~= nil
-    end
-    return false
-end
+-- ScrollingFrame untuk daftar value
+local Content = Instance.new("ScrollingFrame", MainFrame)
+Content.Size = UDim2.new(1, -10, 1, -50)
+Content.Position = UDim2.new(0, 5, 0, 45)
+Content.BackgroundTransparency = 1
+Content.CanvasSize = UDim2.new(0, 0, 0, 0)
+Content.ScrollBarThickness = 6
 
-local function createValueRow(parent, valueInst)
-    if not parent or not valueInst then return end
-    if created[valueInst] then return end
-    created[valueInst] = true
+local UIListLayout = Instance.new("UIListLayout", Content)
+UIListLayout.Padding = UDim.new(0, 6)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
+-- 🔹 Fungsi buat editor untuk 1 value
+local function createValueEditor(parent, valueInst)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1,0,0,40)
+    frame.Size = UDim2.new(1, -8, 0, 40)
     frame.BackgroundTransparency = 1
     frame.Parent = parent
 
     local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.38,-8,1,0)
+    label.Size = UDim2.new(0.35, 0, 1, 0)
     label.BackgroundTransparency = 1
     label.Font = Enum.Font.Gotham
     label.TextSize = 13
     label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.TextXAlignment = Enum.TextXAlignment.Left
     label.Text = valueInst.Name
 
     local box = Instance.new("TextBox", frame)
-    box.Size = UDim2.new(0.4,-12,0,28)
-    box.Position = UDim2.new(0.38,0,0.5,-14)
+    box.Size = UDim2.new(0.4, -12, 0, 28)
+    box.Position = UDim2.new(0.35, 0, 0.5, -14)
     box.BackgroundColor3 = Color3.fromRGB(32,32,32)
     box.TextColor3 = Color3.fromRGB(240,240,240)
     box.Font = Enum.Font.Gotham
     box.TextSize = 13
     box.ClearTextOnFocus = false
-    -- show numeric or try to extract number from string
-    if valueInst:IsA("StringValue") then
-        box.Text = tostring( tonumber(valueInst.Value) or valueInst.Value )
-    else
-        box.Text = tostring(valueInst.Value)
-    end
-    local corner = Instance.new("UICorner", box)
-    corner.CornerRadius = UDim.new(0,8)
+    box.Text = tostring(valueInst.Value)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
 
     local applyBtn = Instance.new("TextButton", frame)
-    applyBtn.Size = UDim2.new(0.22,-8,0,28)
-    applyBtn.Position = UDim2.new(0.78,0,0.5,-14)
-    applyBtn.BackgroundColor3 = Color3.fromRGB(50,100,180)
+    applyBtn.Size = UDim2.new(0.22, -8, 0, 28)
+    applyBtn.Position = UDim2.new(0.75, 0, 0.5, -14)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
     applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
     applyBtn.Font = Enum.Font.GothamBold
     applyBtn.TextSize = 13
     applyBtn.Text = "Apply"
     Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0,8)
 
-    local forceBtn = Instance.new("TextButton", frame)
-    forceBtn.Size = UDim2.new(0.18,-8,0,20)
-    forceBtn.Position = UDim2.new(0.78,0,0,4)
-    forceBtn.BackgroundColor3 = Color3.fromRGB(90,90,90)
-    forceBtn.TextColor3 = Color3.fromRGB(240,240,240)
-    forceBtn.Font = Enum.Font.Gotham
-    forceBtn.TextSize = 12
-    forceBtn.Text = "Force: OFF"
-    Instance.new("UICorner", forceBtn).CornerRadius = UDim.new(0,6)
-
     local forceEnabled = false
-    local forceThread = nil
+    local forceThread
 
     applyBtn.MouseButton1Click:Connect(function()
-        local txt = box.Text
-        local n = tonumber(txt)
-        if valueInst:IsA("StringValue") then
-            -- if the original is string and not numeric, assign raw; otherwise assign numeric as string
-            if n then
-                pcall(function() valueInst.Value = tostring(n) end)
-            else
-                pcall(function() valueInst.Value = tostring(txt) end)
-            end
+        if forceEnabled then
+            -- stop mode paksa
+            forceEnabled = false
+            applyBtn.Text = "Apply"
+            applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
         else
+            -- jalankan sekali
+            local n = tonumber(box.Text)
             if n then
-                pcall(function() valueInst.Value = n end)
+                valueInst.Value = n
+                box.Text = tostring(valueInst.Value)
             else
-                -- invalid number, restore display
                 box.Text = tostring(valueInst.Value)
             end
         end
     end)
 
-    forceBtn.MouseButton1Click:Connect(function()
+    -- Mode paksa (klik kanan)
+    applyBtn.MouseButton2Click:Connect(function()
         forceEnabled = not forceEnabled
-        forceBtn.Text = "Force: " .. (forceEnabled and "ON" or "OFF")
-        if forceEnabled and not forceThread then
-            local desiredText = box.Text
+        if forceEnabled then
+            applyBtn.Text = "Force"
+            applyBtn.BackgroundColor3 = Color3.fromRGB(200,80,80)
             forceThread = task.spawn(function()
                 while forceEnabled do
-                    local n = tonumber(desiredText)
-                    if valueInst:IsA("StringValue") then
-                        pcall(function() valueInst.Value = (n and tostring(n) or desiredText) end)
-                    else
-                        if n then
-                            pcall(function() valueInst.Value = n end)
-                        end
-                    end
-                    task.wait(0.6)
+                    local n = tonumber(box.Text)
+                    if n then valueInst.Value = n end
+                    task.wait(0.2)
                 end
-                forceThread = nil
             end)
         else
-            forceEnabled = false
+            applyBtn.Text = "Apply"
+            applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
         end
     end)
 
-    -- Update box when server changes value
-    local conn
-    conn = valueInst:GetPropertyChangedSignal("Value"):Connect(function()
-        if not box then
-            pcall(function() conn:Disconnect() end)
-            return
-        end
-        if valueInst:IsA("StringValue") then
-            box.Text = tostring( tonumber(valueInst.Value) or valueInst.Value )
-        else
-            box.Text = tostring(valueInst.Value)
-        end
+    -- update kalau value berubah
+    valueInst:GetPropertyChangedSignal("Value"):Connect(function()
+        box.Text = tostring(valueInst.Value)
     end)
 
-    -- cleanup if value removed
-    valueInst.AncestryChanged:Connect(function(_, parent)
-        if not parent or not parent:IsDescendantOf(game) then
-            pcall(function()
-                conn:Disconnect()
-                frame:Destroy()
-            end)
-            created[valueInst] = nil
-        end
-    end)
+    -- update ukuran canvas
+    parent.CanvasSize = UDim2.new(0,0,0,UIListLayout.AbsoluteContentSize.Y + 10)
 end
 
--- scan a folder for numeric ValueBase children
+-- 🔹 Scan folder untuk IntValue/NumberValue
 local function scanFolder(folder)
-    if not folder then return end
-    for _,child in ipairs(folder:GetChildren()) do
-        if isNumericValue(child) then
-            createValueRow(ContentFrame, child)
+    for _,v in ipairs(folder:GetChildren()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            createValueEditor(Content, v)
+        elseif v:IsA("Folder") then
+            scanFolder(v)
         end
     end
-    -- listen for new children
-    folder.ChildAdded:Connect(function(child)
-        if isNumericValue(child) then
-            -- small delay to allow initialization in some games
-            task.wait(0.05)
-            createValueRow(ContentFrame, child)
-        end
-    end)
 end
 
--- Main scan: check common containers and the player's top-level children
-local function mainScan()
-    local lp = LocalPlayer
-    if not lp then return end
+-- 🔹 Jalankan scan ke beberapa folder utama
+local function runScan()
+    Content:ClearAllChildren()
+    Instance.new("UIListLayout", Content).Padding = UDim.new(0, 6)
 
-    -- common folders to check
-    local folderNames = {"Upgrades", "leaderstats", "DataFolder", "Stats", "PlayerData", "Profile"}
-    for _, name in ipairs(folderNames) do
-        local f = lp:FindFirstChild(name)
-        if f then scanFolder(f) end
-        -- also watch for folder creation
-        lp:FindFirstChildWhichIsA ~= nil -- no-op to satisfy analyzers
-        lp.ChildAdded:Connect(function(c)
-            if c.Name == name and c:IsA("Folder") then
-                task.wait(0.05)
-                scanFolder(c)
-            end
-        end)
+    if LocalPlayer:FindFirstChild("leaderstats") then
+        scanFolder(LocalPlayer.leaderstats)
     end
-
-    -- also scan direct numeric children of player (like Upgrades may be present as folder)
-    for _,child in ipairs(lp:GetChildren()) do
-        if isNumericValue(child) then
-            createValueRow(ContentFrame, child)
-        end
+    if LocalPlayer:FindFirstChild("Upgrades") then
+        scanFolder(LocalPlayer.Upgrades)
     end
-
-    -- Also monitor when new numeric value appears anywhere under player
-    lp.DescendantAdded:Connect(function(desc)
-        if isNumericValue(desc) then
-            -- place under Content (avoid duplicates via created map)
-            task.wait(0.05)
-            createValueRow(ContentFrame, desc)
-        end
-    end)
+    if LocalPlayer:FindFirstChild("DataFolder") then
+        scanFolder(LocalPlayer.DataFolder)
+    end
 end
 
--- run scan (with a short delay to allow game to create things)
-task.spawn(function()
-    task.wait(0.3)
-    mainScan()
-end)
+-- panggil pertama kali
+runScan()
+
+print("✅ Value Editor berhasil dimuat! Semua value (Cash, Points, dll.) siap diubah.")
 
 
-print("✅ TPB loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
+print("✅ TPB Refactor patched loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
