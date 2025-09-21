@@ -1163,6 +1163,58 @@ end
 -- jalankan
 createOtherStatsEditor()
 
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+local upgrades = lp:WaitForChild("Upgrades")
+
+-- buat GUI
+local screenGui = Instance.new("ScreenGui", lp:WaitForChild("PlayerGui"))
+local frame = Instance.new("Frame", screenGui)
+frame.Size = UDim2.new(0, 250, 0, 300)
+frame.Position = UDim2.new(0, 50, 0, 200)
+frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+
+local layout = Instance.new("UIListLayout", frame)
+layout.Padding = UDim.new(0, 5)
+
+-- fungsi bikin editor
+local function createEditor(stat)
+    local container = Instance.new("Frame", frame)
+    container.Size = UDim2.new(1, 0, 0, 30)
+    container.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", container)
+    label.Size = UDim2.new(0.5, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Text = stat.Name .. " = " .. stat.Value
+
+    local box = Instance.new("TextBox", container)
+    box.Size = UDim2.new(0.3, 0, 1, 0)
+    box.Position = UDim2.new(0.5, 0, 0, 0)
+    box.Text = tostring(stat.Value)
+
+    local button = Instance.new("TextButton", container)
+    button.Size = UDim2.new(0.2, 0, 1, 0)
+    button.Position = UDim2.new(0.8, 0, 0, 0)
+    button.Text = "Apply"
+
+    button.MouseButton1Click:Connect(function()
+        local newVal = tonumber(box.Text)
+        if newVal then
+            stat.Value = newVal
+            label.Text = stat.Name .. " = " .. stat.Value
+        end
+    end)
+end
+
+-- buat editor untuk semua children dalam Upgrades
+for _, stat in ipairs(upgrades:GetChildren()) do
+    if stat:IsA("ValueBase") then
+        createEditor(stat)
+    end
+end
+
 
 
 print("✅ TPB loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
