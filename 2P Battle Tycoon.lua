@@ -821,359 +821,75 @@ if _G then
     end
 end
 
-
--- ✅ Executor GUI Value Editor (Revised)
--- Fitur: Edit Cash, Rebirth Points, dll.
-
--- Ambil service dan player
+-- Passes Editor UI
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local player = Players.LocalPlayer
+local passesFolder = player:WaitForChild("Passes")
 
--- Buat ScreenGui utama
+-- Buat ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ValueEditor_GUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = PlayerGui
+ScreenGui.Name = "PassesEditor"
+ScreenGui.Parent = game.CoreGui
 
 -- Frame utama
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 400, 0, 350)
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 300, 0, 400)
+Frame.Position = UDim2.new(0.3, 0, 0.3, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Frame.Active = true
+Frame.Draggable = true -- biar bisa digeser
+Frame.Parent = ScreenGui
 
 -- Judul
-local Title = Instance.new("TextLabel", MainFrame)
+local Title = Instance.new("TextLabel")
+Title.Text = "🎟️ Passes Editor"
 Title.Size = UDim2.new(1, 0, 0, 40)
-Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
+Title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🔧 Value Editor"
-Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 20
+Title.Parent = Frame
 
--- ScrollingFrame untuk daftar value
-local Content = Instance.new("ScrollingFrame", MainFrame)
-Content.Size = UDim2.new(1, -10, 1, -50)
-Content.Position = UDim2.new(0, 5, 0, 45)
-Content.BackgroundTransparency = 1
-Content.CanvasSize = UDim2.new(0, 0, 0, 0)
-Content.ScrollBarThickness = 6
+-- Scrolling area untuk list Passes
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Size = UDim2.new(1, 0, 1, -40)
+ScrollingFrame.Position = UDim2.new(0, 0, 0, 40)
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.ScrollBarThickness = 6
+ScrollingFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ScrollingFrame.Parent = Frame
 
-local UIListLayout = Instance.new("UIListLayout", Content)
-UIListLayout.Padding = UDim.new(0, 6)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+-- Template untuk Pass Item
+local function createPassButton(pass)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, -10, 0, 40)
+    Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextSize = 18
+    Button.Text = pass.Name .. " : " .. tostring(pass.Value)
+    Button.Parent = ScrollingFrame
 
--- 🔹 Fungsi buat editor untuk 1 value
-local function createValueEditor(parent, valueInst)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -8, 0, 40)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
-
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.35, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 13
-    label.TextColor3 = Color3.fromRGB(230,230,230)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Text = valueInst.Name
-
-    local box = Instance.new("TextBox", frame)
-    box.Size = UDim2.new(0.4, -12, 0, 28)
-    box.Position = UDim2.new(0.35, 0, 0.5, -14)
-    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
-    box.TextColor3 = Color3.fromRGB(240,240,240)
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 13
-    box.ClearTextOnFocus = false
-    box.Text = tostring(valueInst.Value)
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
-
-    local applyBtn = Instance.new("TextButton", frame)
-    applyBtn.Size = UDim2.new(0.22, -8, 0, 28)
-    applyBtn.Position = UDim2.new(0.75, 0, 0.5, -14)
-    applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
-    applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
-    applyBtn.Font = Enum.Font.GothamBold
-    applyBtn.TextSize = 13
-    applyBtn.Text = "Apply"
-    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0,8)
-
-    local forceEnabled = false
-    local forceThread
-
-    applyBtn.MouseButton1Click:Connect(function()
-        if forceEnabled then
-            -- stop mode paksa
-            forceEnabled = false
-            applyBtn.Text = "Apply"
-            applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
-        else
-            -- jalankan sekali
-            local n = tonumber(box.Text)
-            if n then
-                valueInst.Value = n
-                box.Text = tostring(valueInst.Value)
-            else
-                box.Text = tostring(valueInst.Value)
-            end
-        end
+    Button.MouseButton1Click:Connect(function()
+        pass.Value = not pass.Value
+        Button.Text = pass.Name .. " : " .. tostring(pass.Value)
     end)
 
-    -- Mode paksa (klik kanan)
-    applyBtn.MouseButton2Click:Connect(function()
-        forceEnabled = not forceEnabled
-        if forceEnabled then
-            applyBtn.Text = "Force"
-            applyBtn.BackgroundColor3 = Color3.fromRGB(200,80,80)
-            forceThread = task.spawn(function()
-                while forceEnabled do
-                    local n = tonumber(box.Text)
-                    if n then valueInst.Value = n end
-                    task.wait(0.2)
-                end
-            end)
-        else
-            applyBtn.Text = "Apply"
-            applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
-        end
-    end)
-
-    -- update kalau value berubah
-    valueInst:GetPropertyChangedSignal("Value"):Connect(function()
-        box.Text = tostring(valueInst.Value)
-    end)
-
-    -- update ukuran canvas
-    parent.CanvasSize = UDim2.new(0,0,0,UIListLayout.AbsoluteContentSize.Y + 10)
+    return Button
 end
 
--- 🔹 Scan folder untuk IntValue/NumberValue
-local function scanFolder(folder)
-    for _,v in ipairs(folder:GetChildren()) do
-        if v:IsA("IntValue") or v:IsA("NumberValue") then
-            createValueEditor(Content, v)
-        elseif v:IsA("Folder") then
-            scanFolder(v)
-        end
+-- Tambahkan semua Passes ke UI
+local y = 0
+for _, pass in ipairs(passesFolder:GetChildren()) do
+    if pass:IsA("BoolValue") then
+        local btn = createPassButton(pass)
+        btn.Position = UDim2.new(0, 5, 0, y)
+        y = y + 45
     end
 end
-
--- 🔹 Jalankan scan ke beberapa folder utama
-local function runScan()
-    Content:ClearAllChildren()
-    Instance.new("UIListLayout", Content).Padding = UDim.new(0, 6)
-
-    if LocalPlayer:FindFirstChild("leaderstats") then
-        scanFolder(LocalPlayer.leaderstats)
-    end
-    if LocalPlayer:FindFirstChild("Upgrades") then
-        scanFolder(LocalPlayer.Upgrades)
-    end
-    if LocalPlayer:FindFirstChild("DataFolder") then
-        scanFolder(LocalPlayer.DataFolder)
-    end
-end
-
--- panggil pertama kali
-runScan()
-
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local upgrades = player:WaitForChild("Upgrades")
-
--- Daftar value yang bisa diedit (tambahkan sesuai kebutuhan)
-local editableValues = {
-    upgrades:WaitForChild("Cash"),      -- uang
-    upgrades:WaitForChild("Points"),    -- rebirth points
-    upgrades:WaitForChild("WalkSpeed"),
-    upgrades:WaitForChild("Health"),
-    upgrades:WaitForChild("Ammo"),
-}
-
--- GUI
-local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-ScreenGui.ResetOnSpawn = false
-
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 260, 0, #editableValues * 55 + 30)
-Frame.Position = UDim2.new(0, 20, 0.3, 0)
-Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Frame.BorderSizePixel = 0
-
--- Title bar untuk drag
-local TitleBar = Instance.new("TextLabel", Frame)
-TitleBar.Size = UDim2.new(1, 0, 0, 25)
-TitleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-TitleBar.Text = "Value Editor"
-TitleBar.TextColor3 = Color3.new(1, 1, 1)
-
--- drag system
-local UserInputService = game:GetService("UserInputService")
-local dragging, dragInput, dragStart, startPos
-
-TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true
-        dragStart = input.Position
-        startPos = Frame.Position
-
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-
-TitleBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
-                                   startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-end)
-
--- layout dalam frame
-local UIListLayout = Instance.new("UIListLayout", Frame)
-UIListLayout.Padding = UDim.new(0, 5)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
--- isi editor
-for _, value in ipairs(editableValues) do
-    local holder = Instance.new("Frame", Frame)
-    holder.Size = UDim2.new(1, -10, 0, 30)
-    holder.BackgroundTransparency = 1
-
-    local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.new(0.4, 0, 1, 0)
-    label.Text = value.Name
-    label.TextColor3 = Color3.new(1,1,1)
-    label.BackgroundTransparency = 1
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    local input = Instance.new("TextBox", holder)
-    input.Size = UDim2.new(0.4, 0, 1, 0)
-    input.Position = UDim2.new(0.4, 0, 0, 0)
-    input.Text = tostring(value.Value)
-    input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    input.TextColor3 = Color3.new(1,1,1)
-
-    local apply = Instance.new("TextButton", holder)
-    apply.Size = UDim2.new(0.2, -5, 1, 0)
-    apply.Position = UDim2.new(0.8, 0, 0, 0)
-    apply.Text = "Apply"
-    apply.BackgroundColor3 = Color3.fromRGB(70, 130, 70)
-    apply.TextColor3 = Color3.new(1,1,1)
-
-    -- sinkronisasi realtime
-    value:GetPropertyChangedSignal("Value"):Connect(function()
-        input.Text = tostring(value.Value)
-    end)
-
-    -- tombol apply
-    apply.MouseButton1Click:Connect(function()
-        local num = tonumber(input.Text)
-        if num then
-            value.Value = num
-            print("Updated", value.Name, "=", num)
-        end
-    end)
-end
-
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local player = Players.LocalPlayer
-local upgrades = player:WaitForChild("Upgrades")
-
--- Daftar value yang bisa diedit
-local editableValues = {
-    player.leaderstats:WaitForChild("Kills"),
-    player.leaderstats:WaitForChild("Deaths"),
-    upgrades:WaitForChild("WalkSpeed"),
-    upgrades:WaitForChild("Ammo"),
-    upgrades:WaitForChild("Health"),
-    upgrades:WaitForChild("Cash"),
-    upgrades:WaitForChild("Points"), -- <== Rebirth Points
-}
-
--- GUI
-local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-ScreenGui.ResetOnSpawn = false
-
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 260, 0, #editableValues * 55 + 30)
-Frame.Position = UDim2.new(0.35, 0, 0.25, 0)
-Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Frame.BorderSizePixel = 0
-Frame.Active = true
-Frame.Draggable = true  -- ✅ ini bikin bisa di-drag
-
--- Title bar
-local TitleBar = Instance.new("TextLabel", Frame)
-TitleBar.Size = UDim2.new(1, 0, 0, 25)
-TitleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-TitleBar.Text = "⚙ Value Editor"
-TitleBar.TextColor3 = Color3.new(1, 1, 1)
-
--- Layout
-local UIListLayout = Instance.new("UIListLayout", Frame)
-UIListLayout.Padding = UDim.new(0, 5)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
--- Input Fields
-for _, value in ipairs(editableValues) do
-    local holder = Instance.new("Frame", Frame)
-    holder.Size = UDim2.new(1, -10, 0, 30)
-    holder.BackgroundTransparency = 1
-
-    local label = Instance.new("TextLabel", holder)
-    label.Size = UDim2.new(0.4, 0, 1, 0)
-    label.Text = value.Name
-    label.TextColor3 = Color3.new(1,1,1)
-    label.BackgroundTransparency = 1
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    local input = Instance.new("TextBox", holder)
-    input.Size = UDim2.new(0.4, 0, 1, 0)
-    input.Position = UDim2.new(0.4, 0, 0, 0)
-    input.Text = tostring(value.Value)
-    input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    input.TextColor3 = Color3.new(1,1,1)
-
-    local apply = Instance.new("TextButton", holder)
-    apply.Size = UDim2.new(0.2, -5, 1, 0)
-    apply.Position = UDim2.new(0.8, 0, 0, 0)
-    apply.Text = "Apply"
-    apply.BackgroundColor3 = Color3.fromRGB(70, 130, 70)
-    apply.TextColor3 = Color3.new(1,1,1)
-
-    -- Update otomatis kalau value berubah
-    value:GetPropertyChangedSignal("Value"):Connect(function()
-        input.Text = tostring(value.Value)
-    end)
-
-    -- Tombol apply
-    apply.MouseButton1Click:Connect(function()
-        local num = tonumber(input.Text)
-        if num then
-            value.Value = num
-            print("Updated", value.Name, "=", num)
-        end
-    end)
-end
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, y)
 
 
-print("✅ Value Editor berhasil dimuat! Semua value (Cash, Points, dll.) siap diubah.")
 
 
 print("✅ TPB Refactor patched loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
