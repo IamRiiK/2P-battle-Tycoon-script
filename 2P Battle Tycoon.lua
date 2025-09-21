@@ -895,11 +895,38 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Buat ScreenGui utama
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "ValueEditor_GUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = PlayerGui
+-- Value Editor Section
+local ValueEditorFrame = Instance.new("Frame")
+ValueEditorFrame.Name = "ValueEditor"
+ValueEditorFrame.Parent = Content
+ValueEditorFrame.Size = UDim2.new(1, -10, 0, 200)
+ValueEditorFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+ValueEditorFrame.BorderSizePixel = 0
+ValueEditorFrame.Position = UDim2.new(0, 5, 0, 0)
+
+local VE_Label = Instance.new("TextLabel")
+VE_Label.Parent = ValueEditorFrame
+VE_Label.Size = UDim2.new(1, 0, 0, 25)
+VE_Label.BackgroundTransparency = 1
+VE_Label.Text = "🔧 Value Editor"
+VE_Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+VE_Label.Font = Enum.Font.GothamBold
+VE_Label.TextSize = 14
+
+-- ScrollingFrame untuk daftar values
+local VE_Scroll = Instance.new("ScrollingFrame")
+VE_Scroll.Parent = ValueEditorFrame
+VE_Scroll.Size = UDim2.new(1, -10, 1, -35)
+VE_Scroll.Position = UDim2.new(0, 5, 0, 30)
+VE_Scroll.BackgroundTransparency = 1
+VE_Scroll.ScrollBarThickness = 4
+
+local VE_Layout = Instance.new("UIListLayout")
+VE_Layout.Parent = VE_Scroll
+VE_Layout.Padding = UDim.new(0, 4)
+
+-- fungsi GenerateValueEditor, Apply, Force dll ditempel di sini
+
 
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
