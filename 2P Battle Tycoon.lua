@@ -899,5 +899,92 @@ end
 -- panggil cash editor
 createCashEditor()
 
+-- [ MULTI-CURRENCY EDITOR ]
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- tunggu sampai stats muncul
+local function waitForStats()
+    local stats = nil
+    repeat
+        stats = LocalPlayer:FindFirstChild("leaderstats") 
+            or LocalPlayer:FindFirstChild("DataFolder") 
+            or LocalPlayer:FindFirstChild("Stats")
+        task.wait(1)
+    until stats
+    return stats
+end
+
+-- buat baris editor untuk setiap currency
+local function createCurrencyRow(parent, currencyValue)
+    local frame = Instance.new("Frame", parent)
+    frame.Size = UDim2.new(1,0,0,40)
+    frame.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.4,-8,1,0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.Text = currencyValue.Name
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.4,-12,0,28)
+    box.Position = UDim2.new(0.4,0,0.5,-14)
+    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.TextColor3 = Color3.fromRGB(240,240,240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.Text = tostring(currencyValue.Value)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+
+    local applyBtn = Instance.new("TextButton", frame)
+    applyBtn.Size = UDim2.new(0.2,-8,0,28)
+    applyBtn.Position = UDim2.new(0.8,0,0.5,-14)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(50,100,180)
+    applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    applyBtn.Font = Enum.Font.GothamBold
+    applyBtn.TextSize = 13
+    applyBtn.Text = "Apply"
+    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0,8)
+
+    -- apply manual
+    applyBtn.MouseButton1Click:Connect(function()
+        local n = tonumber(box.Text)
+        if n then
+            currencyValue.Value = n
+        else
+            box.Text = tostring(currencyValue.Value)
+        end
+    end)
+
+    -- update otomatis kalau value berubah di game
+    currencyValue:GetPropertyChangedSignal("Value"):Connect(function()
+        box.Text = tostring(currencyValue.Value)
+    end)
+end
+
+-- inisialisasi semua currency
+local function createCurrencyEditor()
+    local stats = waitForStats()
+    for _, v in ipairs(stats:GetChildren()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            createCurrencyRow(Content, v)
+        end
+    end
+
+    -- kalau ada currency baru ditambahkan setelahnya
+    stats.ChildAdded:Connect(function(v)
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            createCurrencyRow(Content, v)
+        end
+    end)
+end
+
+-- panggil editor
+createCurrencyEditor()
+
 
 print("✅ TPB loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
