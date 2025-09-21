@@ -1215,6 +1215,155 @@ for _, stat in ipairs(upgrades:GetChildren()) do
     end
 end
 
+-- ===== Rebirth Points Editor (Upgrades -> Points) =====
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Content = Content -- pastikan variabel Content (frame list) ada di scope (UI kamu)
+-- jika nama Content berbeda, ganti sesuai variabel UI list tempat ingin menaruh baris
+
+-- Helper: tunggu Upgrades muncul
+local function waitForUpgrades(timeout)
+    timeout = timeout or 15
+    local elapsed = 0
+    while elapsed < timeout do
+        if LocalPlayer:FindFirstChild("Upgrades") then
+            return LocalPlayer:FindFirstChild("Upgrades")
+        end
+        task.wait(0.5)
+        elapsed = elapsed + 0.5
+    end
+    return LocalPlayer:FindFirstChild("Upgrades") -- mungkin nil
+end
+
+-- Helper: cari Value name yang cocok (points/rebirth)
+local function findPointsValue(upgradesFolder)
+    if not upgradesFolder then return nil end
+    local keywords = { "point", "points", "rebirth", "rp", "perkpoint", "perk" }
+    for _, v in ipairs(upgradesFolder:GetChildren()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            local lname = v.Name:lower()
+            for _, k in ipairs(keywords) do
+                if lname:match(k) then
+                    return v
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Buat baris editor di UI (menggunakan style sama seperti yang sudah ada)
+local function createPointsEditor(parent, valueInst)
+    if not parent or not valueInst then return end
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1,0,0,40)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.38,-8,1,0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.Text = valueInst.Name
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.4,-12,0,28)
+    box.Position = UDim2.new(0.38,0,0.5,-14)
+    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.TextColor3 = Color3.fromRGB(240,240,240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.Text = tostring(valueInst.Value)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+
+    local applyBtn = Instance.new("TextButton", frame)
+    applyBtn.Size = UDim2.new(0.22,-8,0,28)
+    applyBtn.Position = UDim2.new(0.78,0,0.5,-14)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(50,100,180)
+    applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    applyBtn.Font = Enum.Font.GothamBold
+    applyBtn.TextSize = 13
+    applyBtn.Text = "Apply"
+    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0,8)
+
+    local toggleBtn = Instance.new("TextButton", frame)
+    toggleBtn.Size = UDim2.new(0.18,-8,0,20)
+    toggleBtn.Position = UDim2.new(0.78,0,0,4)
+    toggleBtn.BackgroundColor3 = Color3.fromRGB(90,90,90)
+    toggleBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    toggleBtn.Font = Enum.Font.Gotham
+    toggleBtn.TextSize = 12
+    toggleBtn.Text = "Force: OFF"
+    Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0,6)
+
+    -- status force loop
+    local forceEnabled = false
+    local forceThread = nil
+
+    -- apply manual (sekali)
+    applyBtn.MouseButton1Click:Connect(function()
+        local n = tonumber(box.Text)
+        if not n then
+            box.Text = tostring(valueInst.Value)
+            return
+        end
+        pcall(function() valueInst.Value = n end)
+        box.Text = tostring(valueInst.Value)
+    end)
+
+    -- toggle force: set ulang berkala sampai dinonaktifkan
+    toggleBtn.MouseButton1Click:Connect(function()
+        forceEnabled = not forceEnabled
+        toggleBtn.Text = "Force: " .. (forceEnabled and "ON" or "OFF")
+        if forceEnabled and not forceThread then
+            local desired = tonumber(box.Text) or valueInst.Value
+            forceThread = task.spawn(function()
+                while forceEnabled do
+                    pcall(function() valueInst.Value = desired end)
+                    task.wait(0.6) -- interval, sesuaikan kalau perlu
+                end
+                forceThread = nil
+            end)
+        else
+            -- turn off; loop akan berhenti karena forceEnabled false
+            forceEnabled = false
+        end
+    end)
+
+    -- update textbox jika value diubah dari server
+    valueInst:GetPropertyChangedSignal("Value"):Connect(function()
+        box.Text = tostring(valueInst.Value)
+    end)
+end
+
+-- Inisialisasi (cari Upgrades + Points)
+local function initPointsEditor()
+    local ups = waitForUpgrades(12)
+    if not ups then
+        warn("[PointsEditor] Folder 'Upgrades' tidak ditemukan.")
+        return
+    end
+
+    local val = findPointsValue(ups)
+    if not val then
+        -- jika tidak ketemu nama "points", tampilkan semua numeric di folder untuk dipilih
+        for _, child in ipairs(ups:GetChildren()) do
+            if child:IsA("IntValue") or child:IsA("NumberValue") then
+                createPointsEditor(Content, child)
+            end
+        end
+        return
+    end
+
+    createPointsEditor(Content, val)
+end
+
+-- eksekusi
+initPointsEditor()
 
 
 print("✅ TPB loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
