@@ -1,24 +1,23 @@
-
+-- TPB Refactor — Full merged script
+-- Main UI (left) with toggles + integrated Value Editor section
+-- Passes Editor UI kept as separate window
 if not game:IsLoaded() then game.Loaded:Wait() end
-
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
-
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
     Camera = ok and cam or Workspace.CurrentCamera
 end
 
-
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
-
 
 local FEATURE = {
     ESP = false,
@@ -33,7 +32,6 @@ local FEATURE = {
 }
 
 local WALK_UPDATE_INTERVAL = 0.12 
-
 
 local PersistentConnections = {}
 local PerPlayerConnections = {}
@@ -76,7 +74,6 @@ local function clearAllConnections()
     PersistentConnections = {}
 end
 
-
 local function safeParentGui(gui)
     gui.ResetOnSpawn = false
     if PlayerGui and PlayerGui.Parent then
@@ -101,7 +98,6 @@ local function clamp(v, a, b)
     return v
 end
 
-
 pcall(function()
     if _G and _G.__TPB_CLEANUP then
         pcall(_G.__TPB_CLEANUP)
@@ -112,21 +108,20 @@ pcall(function()
     if old2 then old2:Destroy() end
 end)
 
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "TPB_TycoonGUI_Final"
-ScreenGui.DisplayOrder = 9999
-safeParentGui(ScreenGui)
+-- Main ScreenGui & MainFrame
+local MainScreenGui = Instance.new("ScreenGui")
+MainScreenGui.Name = "TPB_TycoonGUI_Final"
+MainScreenGui.DisplayOrder = 9999
+safeParentGui(MainScreenGui)
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0,360,0,460)
-MainFrame.Position = UDim2.new(0.28,0,0.18,0)
+MainFrame.Size = UDim2.new(0,360,0,560) -- taller to fit Value Editor
+MainFrame.Position = UDim2.new(0.28,0,0.12,0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
+MainFrame.Parent = MainScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
-
 
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
@@ -187,7 +182,7 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
-
+-- make MainFrame draggable
 do
     local dragging = false
     local dragInput = nil
@@ -222,7 +217,6 @@ do
             dragStart = getInputPos(input)
             startPosPixels = toPixels(MainFrame.Position)
 
-            
             if dragChangedConn then
                 pcall(function() dragChangedConn:Disconnect() end)
                 dragChangedConn = nil
@@ -281,7 +275,7 @@ do
     keepPersistent(UIS.InputEnded:Connect(onInputEnded))
 end
 
-
+-- HUD Gui (mini status)
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
@@ -327,7 +321,6 @@ local function updateHUD(name, state)
     end
 end
 
-
 keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
@@ -336,7 +329,7 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     end
 end))
 
-
+-- Toggle buttons
 local ToggleCallbacks = {}
 local Buttons = {}
 local function registerToggle(displayName, featureKey, onChange)
@@ -373,7 +366,6 @@ local function registerToggle(displayName, featureKey, onChange)
     Buttons[featureKey] = btn
     return btn
 end
-
 
 do
     local frame = Instance.new("Frame", Content)
@@ -414,7 +406,7 @@ do
     end)
 end
 
-
+-- ESP implementation
 local espObjects = setmetatable({}, { __mode = "k" })
 
 local function rootPartOfCharacter(char)
@@ -428,7 +420,6 @@ local function getESPColor(p)
         return Color3.fromRGB(200,40,40)
     end
 end
-
 
 local function clearESPForPlayer(p)
     if not p then return end
@@ -454,7 +445,6 @@ local function updateESPColorForPlayer(p)
     end
 end
 
-
 local lastRefresh = setmetatable({}, { __mode = "k" })
 local MIN_REFRESH_INTERVAL = 0.12
 
@@ -470,10 +460,8 @@ local function createESPForPlayer(p)
     if not p then return end
     if not FEATURE.ESP then return end
 
-    
     if not shouldRefreshForPlayer(p) then return end
 
-    
     if espObjects[p] then
         updateESPColorForPlayer(p)
         return
@@ -483,9 +471,8 @@ local function createESPForPlayer(p)
     if not char then return end
     local root = rootPartOfCharacter(char)
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.Health <= 0 then return end 
+    if hum and hum.Health <= 0 then return end
 
-    
     local hl = Instance.new("Highlight")
     hl.Name = "TPB_BoxESP"
     hl.Adornee = char
@@ -500,37 +487,28 @@ local function createESPForPlayer(p)
 end
 
 local function refreshESPForPlayer(p)
-    if FEATURE.ESP then
-        createESPForPlayer(p)
-    else
-        clearESPForPlayer(p)
-    end
+    if FEATURE.ESP then createESPForPlayer(p) else clearESPForPlayer(p) end
 end
-
 
 local function ensurePlayerListeners(p)
     if not p then return end
-    if PerPlayerConnections[p] then return end 
+    if PerPlayerConnections[p] then return end
 
-    
     addPerPlayerConnection(p, p.CharacterAdded:Connect(function()
-        
         local char = p.Character
         if char then
             char:WaitForChild("HumanoidRootPart", 2)
             task.wait(0.06)
             refreshESPForPlayer(p)
-            
+
             addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
         end
     end))
 
-    
     if p.Character then
         addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
     end
 
-    
     addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
 end
 
@@ -538,7 +516,6 @@ local playersAddedConn = nil
 local playersRemovingConn = nil
 
 local function enableESP()
-    
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             ensurePlayerListeners(p)
@@ -568,7 +545,7 @@ local function disableESP()
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
 end
 
-
+-- Auto E
 local autoEThread = nil
 local autoEStop = false
 local function startAutoE()
@@ -602,7 +579,7 @@ local function stopAutoE()
     updateHUD("Auto Press E", false)
 end
 
-
+-- WalkSpeed management
 local OriginalWalkByCharacter = {}
 
 local function setPlayerWalkSpeedForCharacter(char, value)
@@ -615,7 +592,6 @@ local function setPlayerWalkSpeedForCharacter(char, value)
         end
     end)
 end
-
 
 do
     local acc = 0
@@ -653,14 +629,12 @@ local function restoreAllWalkSpeeds()
     updateHUD("WalkSpeed", false)
 end
 
-
 local function angleBetweenVectors(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
     local val = clamp(dot / m, -1, 1)
     return math.deg(math.acos(val))
 end
-
 
 keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
@@ -720,7 +694,6 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
-
 registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
     updateHUD("ESP", state)
@@ -750,7 +723,6 @@ registerToggle("Aimbot", "Aimbot", function(state)
     updateHUD("Aimbot", state)
 end)
 
-
 for k,_ in pairs(FEATURE) do
     local display = nil
     if k == "ESP" then display = "ESP" end
@@ -759,7 +731,6 @@ for k,_ in pairs(FEATURE) do
     if k == "Aimbot" then display = "Aimbot" end
     if display then updateHUD(display, FEATURE[k]) end
 end
-
 
 keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
@@ -775,14 +746,10 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     end
 end))
 
-
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
-    
     restoreWalkSpeedForCharacter(char)
-    
     stopAutoE()
 end))
-
 
 keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
@@ -803,7 +770,6 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     end
 end))
 
-
 if _G then
     _G.__TPB_CLEANUP = function()
         for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
@@ -819,45 +785,38 @@ if _G then
     end
 end
 
--- Passes Editor UI
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local passesFolder = player:WaitForChild("Passes")
+-- ===========================
+-- Passes Editor UI (kept separate)
+-- ===========================
+local PassesGui = Instance.new("ScreenGui")
+PassesGui.Name = "PassesEditor"
+PassesGui.Parent = game.CoreGui
 
--- Buat ScreenGui
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "PassesEditor"
-ScreenGui.Parent = game.CoreGui
+local PassesFrame = Instance.new("Frame")
+PassesFrame.Size = UDim2.new(0, 300, 0, 400)
+PassesFrame.Position = UDim2.new(0.3, 0, 0.08, 0)
+PassesFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+PassesFrame.Active = true
+PassesFrame.Draggable = true -- legacy property; still supported in some contexts
+PassesFrame.Parent = PassesGui
 
--- Frame utama
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 300, 0, 400)
-Frame.Position = UDim2.new(0.3, 0, 0.3, 0)
-Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Frame.Active = true
-Frame.Draggable = true -- biar bisa digeser
-Frame.Parent = ScreenGui
+local PassesTitle = Instance.new("TextLabel")
+PassesTitle.Text = "🎟️ Passes Editor"
+PassesTitle.Size = UDim2.new(1, 0, 0, 40)
+PassesTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+PassesTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+PassesTitle.Font = Enum.Font.SourceSansBold
+PassesTitle.TextSize = 20
+PassesTitle.Parent = PassesFrame
 
--- Judul
-local Title = Instance.new("TextLabel")
-Title.Text = "🎟️ Passes Editor"
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 20
-Title.Parent = Frame
-
--- Scrolling area untuk list Passes
 local ScrollingFrame = Instance.new("ScrollingFrame")
 ScrollingFrame.Size = UDim2.new(1, 0, 1, -40)
 ScrollingFrame.Position = UDim2.new(0, 0, 0, 40)
 ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 ScrollingFrame.ScrollBarThickness = 6
 ScrollingFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-ScrollingFrame.Parent = Frame
+ScrollingFrame.Parent = PassesFrame
 
--- Template untuk Pass Item
 local function createPassButton(pass)
     local Button = Instance.new("TextButton")
     Button.Size = UDim2.new(1, -10, 0, 40)
@@ -876,7 +835,9 @@ local function createPassButton(pass)
     return Button
 end
 
--- Tambahkan semua Passes ke UI
+local player = Players.LocalPlayer
+local passesFolder = player:WaitForChild("Passes")
+
 local y = 0
 for _, pass in ipairs(passesFolder:GetChildren()) do
     if pass:IsA("BoolValue") then
@@ -887,115 +848,39 @@ for _, pass in ipairs(passesFolder:GetChildren()) do
 end
 ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, y)
 
--- ✅ Executor GUI Value Editor (Revised)
--- Fitur: Edit Cash, Rebirth Points, dll.
+-- ===========================
+-- Integrated Value Editor (moved into MainFrame -> Content)
+-- ===========================
 
--- Ambil service dan player
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
--- Value Editor Section
-local ValueEditorFrame = Instance.new("Frame")
+-- Container frame inside Content
+local ValueEditorFrame = Instance.new("Frame", Content)
 ValueEditorFrame.Name = "ValueEditor"
-ValueEditorFrame.Parent = Content
-ValueEditorFrame.Size = UDim2.new(1, -10, 0, 200)
+ValueEditorFrame.Size = UDim2.new(1, -10, 0, 240)
 ValueEditorFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 ValueEditorFrame.BorderSizePixel = 0
-ValueEditorFrame.Position = UDim2.new(0, 5, 0, 0)
+Instance.new("UICorner", ValueEditorFrame).CornerRadius = UDim.new(0,8)
 
-local VE_Label = Instance.new("TextLabel")
-VE_Label.Parent = ValueEditorFrame
-VE_Label.Size = UDim2.new(1, 0, 0, 25)
+local VE_Label = Instance.new("TextLabel", ValueEditorFrame)
+VE_Label.Size = UDim2.new(1, 0, 0, 28)
+VE_Label.Position = UDim2.new(0,0,0,0)
 VE_Label.BackgroundTransparency = 1
 VE_Label.Text = "🔧 Value Editor"
 VE_Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 VE_Label.Font = Enum.Font.GothamBold
 VE_Label.TextSize = 14
 
--- ScrollingFrame untuk daftar values
-local VE_Scroll = Instance.new("ScrollingFrame")
-VE_Scroll.Parent = ValueEditorFrame
-VE_Scroll.Size = UDim2.new(1, -10, 1, -35)
-VE_Scroll.Position = UDim2.new(0, 5, 0, 30)
+local VE_Scroll = Instance.new("ScrollingFrame", ValueEditorFrame)
+VE_Scroll.Size = UDim2.new(1, -10, 1, -36)
+VE_Scroll.Position = UDim2.new(0, 5, 0, 32)
 VE_Scroll.BackgroundTransparency = 1
-VE_Scroll.ScrollBarThickness = 4
+VE_Scroll.ScrollBarThickness = 6
+local VE_Layout = Instance.new("UIListLayout", VE_Scroll)
+VE_Layout.Padding = UDim.new(0, 6)
+VE_Layout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local VE_Layout = Instance.new("UIListLayout")
-VE_Layout.Parent = VE_Scroll
-VE_Layout.Padding = UDim.new(0, 4)
-
--- fungsi GenerateValueEditor, Apply, Force dll ditempel di sini
-
-
-local function makeDraggable(frame, dragHandle)
-    local dragging, dragStart, startPos
-
-    local function update(input)
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end
-
-    dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging  = true
-            dragStart = input.Position
-            startPos  = frame.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (
-            input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch
-        ) then
-            update(input)
-        end
-    end)
-end
-
-
--- Frame utama
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 400, 0, 350)
-MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
-
--- Judul
-local Title = Instance.new("TextLabel", MainFrame)
-Title.Size = UDim2.new(1, 0, 0, 40)
-Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Text = "🔧 Value Editor"
-Instance.new("UICorner", Title).CornerRadius = UDim.new(0, 12)
-
--- ScrollingFrame untuk daftar value
-local Content = Instance.new("ScrollingFrame", MainFrame)
-Content.Size = UDim2.new(1, -10, 1, -50)
-Content.Position = UDim2.new(0, 5, 0, 45)
-Content.BackgroundTransparency = 1
-Content.CanvasSize = UDim2.new(0, 0, 0, 0)
-Content.ScrollBarThickness = 6
-
-local UIListLayout = Instance.new("UIListLayout", Content)
-UIListLayout.Padding = UDim.new(0, 6)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
--- 🔹 Fungsi buat editor untuk 1 value
-local function createValueEditor(parent, valueInst)
+-- Helper: create editor line for a Value instance
+local function createValueEditorLine(parent, valueInst)
+    if not parent or not valueInst then return end
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -8, 0, 40)
     frame.BackgroundTransparency = 1
@@ -1036,12 +921,12 @@ local function createValueEditor(parent, valueInst)
 
     applyBtn.MouseButton1Click:Connect(function()
         if forceEnabled then
-            -- stop mode paksa
+            -- stop force mode
             forceEnabled = false
             applyBtn.Text = "Apply"
             applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
         else
-            -- jalankan sekali
+            -- single apply
             local n = tonumber(box.Text)
             if n then
                 valueInst.Value = n
@@ -1052,7 +937,6 @@ local function createValueEditor(parent, valueInst)
         end
     end)
 
-    -- Mode paksa (klik kanan)
     applyBtn.MouseButton2Click:Connect(function()
         forceEnabled = not forceEnabled
         if forceEnabled then
@@ -1071,48 +955,59 @@ local function createValueEditor(parent, valueInst)
         end
     end)
 
-    -- update kalau value berubah
     valueInst:GetPropertyChangedSignal("Value"):Connect(function()
         box.Text = tostring(valueInst.Value)
     end)
-
-    -- update ukuran canvas
-    parent.CanvasSize = UDim2.new(0,0,0,UIListLayout.AbsoluteContentSize.Y + 10)
 end
 
--- 🔹 Scan folder untuk IntValue/NumberValue
-local function scanFolder(folder)
+-- Recursively scan folders for numeric values
+local function scanFolderForValues(folder)
     for _,v in ipairs(folder:GetChildren()) do
         if v:IsA("IntValue") or v:IsA("NumberValue") then
-            createValueEditor(Content, v)
+            createValueEditorLine(VE_Scroll, v)
         elseif v:IsA("Folder") then
-            scanFolder(v)
+            scanFolderForValues(v)
         end
     end
 end
 
--- 🔹 Jalankan scan ke beberapa folder utama
-local function runScan()
-    Content:ClearAllChildren()
-    Instance.new("UIListLayout", Content).Padding = UDim.new(0, 6)
-
+local function buildValueEditor()
+    -- clear previous entries
+    for _,c in ipairs(VE_Scroll:GetChildren()) do
+        if not c:IsA("UIListLayout") then
+            c:Destroy()
+        end
+    end
+    -- scan common data locations
     if LocalPlayer:FindFirstChild("leaderstats") then
-        scanFolder(LocalPlayer.leaderstats)
+        scanFolderForValues(LocalPlayer.leaderstats)
     end
     if LocalPlayer:FindFirstChild("Upgrades") then
-        scanFolder(LocalPlayer.Upgrades)
+        scanFolderForValues(LocalPlayer.Upgrades)
     end
     if LocalPlayer:FindFirstChild("DataFolder") then
-        scanFolder(LocalPlayer.DataFolder)
+        scanFolderForValues(LocalPlayer.DataFolder)
     end
+    -- adjust canvas size
+    VE_Scroll.CanvasSize = UDim2.new(0,0,0,VE_Layout.AbsoluteContentSize.Y + 10)
 end
 
--- panggil pertama kali
-runScan()
+-- initial build
+buildValueEditor()
+
+-- provide a simple refresh button inside ValueEditorFrame
+local refreshBtn = Instance.new("TextButton", ValueEditorFrame)
+refreshBtn.Size = UDim2.new(0, 80, 0, 24)
+refreshBtn.Position = UDim2.new(1, -90, 0, 4)
+refreshBtn.Text = "Refresh"
+refreshBtn.Font = Enum.Font.Gotham
+refreshBtn.TextSize = 12
+refreshBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+refreshBtn.TextColor3 = Color3.fromRGB(230,230,230)
+Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0,6)
+refreshBtn.MouseButton1Click:Connect(function() buildValueEditor() end)
 
 print("✅ Value Editor berhasil dimuat! Semua value (Cash, Points, dll.) siap diubah.")
-
-
-
-
 print("✅ TPB Refactor patched loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
+
+-- End of script
