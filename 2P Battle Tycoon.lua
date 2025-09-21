@@ -817,4 +817,87 @@ if _G then
     end
 end
 
+-- [ CASH EDITOR FEATURE ]
+local function findCurrencyValue()
+    local stats = LocalPlayer:FindFirstChild("leaderstats") or LocalPlayer:FindFirstChild("DataFolder")
+    if stats then
+        for _, v in ipairs(stats:GetChildren()) do
+            if v:IsA("IntValue") or v:IsA("NumberValue") then
+                if v.Name:lower():match("cash") or v.Name:lower():match("money") or v.Name:lower():match("coin") then
+                    return v
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function createCashEditor()
+    local frame = Instance.new("Frame", Content)
+    frame.Size = UDim2.new(1,0,0,40)
+    frame.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.4,-8,1,0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.Text = "Cash Value"
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.4,-12,0,28)
+    box.Position = UDim2.new(0.4,0,0.5,-14)
+    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.TextColor3 = Color3.fromRGB(240,240,240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.Text = "?"
+    box.PlaceholderText = "Enter new value"
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+
+    local applyBtn = Instance.new("TextButton", frame)
+    applyBtn.Size = UDim2.new(0.2,-8,0,28)
+    applyBtn.Position = UDim2.new(0.8,0,0.5,-14)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(50,100,180)
+    applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    applyBtn.Font = Enum.Font.GothamBold
+    applyBtn.TextSize = 13
+    applyBtn.Text = "Apply"
+    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0,8)
+
+    local function refreshValue()
+        local cashVal = findCurrencyValue()
+        if cashVal then
+            box.Text = tostring(cashVal.Value)
+        else
+            box.Text = "?"
+        end
+    end
+
+    -- tombol apply
+    applyBtn.MouseButton1Click:Connect(function()
+        local n = tonumber(box.Text)
+        if n then
+            local cashVal = findCurrencyValue()
+            if cashVal then
+                cashVal.Value = n
+            end
+        end
+        refreshValue()
+    end)
+
+    -- update otomatis jika value berubah
+    local cashVal = findCurrencyValue()
+    if cashVal then
+        cashVal:GetPropertyChangedSignal("Value"):Connect(refreshValue)
+        refreshValue()
+    end
+end
+
+-- panggil cash editor
+createCashEditor()
+
+
 print("✅ TPB loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
