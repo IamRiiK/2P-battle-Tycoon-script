@@ -1365,5 +1365,18 @@ end
 -- eksekusi
 initPointsEditor()
 
+local Players = game:GetService("Players")
+local lp = Players.LocalPlayer
+
+-- folder Upgrades di player
+local upgrades = lp:FindFirstChild("Upgrades")
+if upgrades then
+    for _,v in ipairs(upgrades:GetChildren()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            createValueEditor(Content, v)  -- fungsi yang sudah kamu pakai buat Cash dll
+        end
+    end
+end
+
 
 print("✅ TPB loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
