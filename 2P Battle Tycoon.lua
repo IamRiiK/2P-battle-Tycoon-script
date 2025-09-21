@@ -7,9 +7,9 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
@@ -174,150 +174,6 @@ Content.Size = UDim2.new(1,-16,1,-56)
 Content.Position = UDim2.new(0,8,0,48)
 Content.BackgroundTransparency = 1
 Instance.new("UIListLayout", Content).Padding = UDim.new(0,12)
-
-
-
--- UI: Teleport menu
-do
-    local parent = Content
-    if not parent then
-        warn("Teleport UI: parent 'Content' tidak ditemukan. Ganti sesuai nama frame UI-mu.")
-    else
-        local TeleFrame = Instance.new("Frame")
-        TeleFrame.Size = UDim2.new(0, 260, 0, 280)
-        TeleFrame.BackgroundColor3 = Color3.fromRGB(35,35,35)
-        TeleFrame.BorderSizePixel = 0
-        TeleFrame.Parent = parent
-        Instance.new("UICorner", TeleFrame).CornerRadius = UDim.new(0,8)
-
-        local label = Instance.new("TextLabel", TeleFrame)
-        label.Size = UDim2.new(1, -12, 0, 26)
-        label.Position = UDim2.new(0, 6, 0, 6)
-        label.BackgroundTransparency = 1
-        label.Font = Enum.Font.GothamBold
-        label.TextSize = 14
-        label.TextColor3 = Color3.fromRGB(240,240,240)
-        label.Text = "📡 Teleport"
-
-        local scroll = Instance.new("ScrollingFrame", TeleFrame)
-        scroll.Size = UDim2.new(1, -12, 1, -40)
-        scroll.Position = UDim2.new(0, 6, 0, 34)
-        scroll.BackgroundTransparency = 1
-        scroll.ScrollBarThickness = 6
-        local layout = Instance.new("UIListLayout", scroll)
-        layout.Padding = UDim.new(0,6)
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-
-        local info = Instance.new("TextLabel", TeleFrame)
-        info.Size = UDim2.new(1, -12, 0, 18)
-        info.Position = UDim2.new(0, 6, 1, -20)
-        info.BackgroundTransparency = 1
-        info.Font = Enum.Font.Gotham
-        info.TextSize = 12
-        info.TextColor3 = Color3.fromRGB(200,200,200)
-        info.TextXAlignment = Enum.TextXAlignment.Left
-        info.Text = "Tip: Spawn hanya muncul untuk timmu."
-
-        -- quick buttons (auto ikut layout di scroll)
-        local quick = Instance.new("Frame", scroll)
-        quick.Size = UDim2.new(1, -6, 0, 32)
-        quick.BackgroundTransparency = 1
-        local qlayout = Instance.new("UIListLayout", quick)
-        qlayout.FillDirection = Enum.FillDirection.Horizontal
-        qlayout.Padding = UDim.new(0,6)
-
-        local mySpawnBtn = Instance.new("TextButton", quick)
-        mySpawnBtn.Size = UDim2.new(0.5, -3, 1, 0)
-        mySpawnBtn.Text = "Teleport to My Spawn"
-        mySpawnBtn.Font = Enum.Font.Gotham
-        mySpawnBtn.TextSize = 12
-        mySpawnBtn.TextColor3 = Color3.fromRGB(255,255,255)
-        mySpawnBtn.BackgroundColor3 = Color3.fromRGB(65,100,65)
-        Instance.new("UICorner", mySpawnBtn).CornerRadius = UDim.new(0,6)
-        mySpawnBtn.MouseButton1Click:Connect(function()
-            local mt = Players.LocalPlayer and Players.LocalPlayer.Team and Players.LocalPlayer.Team.Name or nil
-            if mt and TeleportCoords[mt] and TeleportCoords[mt].Spawn then
-                TeleportTo(TeleportCoords[mt].Spawn)
-            else
-                info.Text = "Spawn not available untuk timmu."
-                task.delay(2, function() info.Text = "Tip: Spawn hanya muncul untuk timmu." end)
-            end
-        end)
-
-        local flagBtn = Instance.new("TextButton", quick)
-        flagBtn.Size = UDim2.new(0.5, -3, 1, 0)
-        flagBtn.Text = "Teleport to Flag"
-        flagBtn.Font = Enum.Font.Gotham
-        flagBtn.TextSize = 12
-        flagBtn.TextColor3 = Color3.fromRGB(255,255,255)
-        flagBtn.BackgroundColor3 = Color3.fromRGB(70,70,120)
-        Instance.new("UICorner", flagBtn).CornerRadius = UDim.new(0,6)
-        flagBtn.MouseButton1Click:Connect(function()
-            if TeleportCoords.Flag and TeleportCoords.Flag.Neutral then
-                TeleportTo(TeleportCoords.Flag.Neutral)
-            end
-        end)
-
-        -- build teleport list
-        local function rebuildTeleportList()
-            -- clear children (kecuali quick + layout)
-            for _,c in ipairs(scroll:GetChildren()) do
-                if c:IsA("Frame") and c ~= quick then
-                    c:Destroy()
-                elseif c:IsA("TextButton") then
-                    c:Destroy()
-                end
-            end
-
-            local myTeam = Players.LocalPlayer and Players.LocalPlayer.Team and Players.LocalPlayer.Team.Name or nil
-
-            for team, locs in pairs(TeleportCoords) do
-                if team == "Flag" then continue end
-                local header = Instance.new("TextButton", scroll)
-                header.Size = UDim2.new(1, -8, 0, 30)
-                header.Text = team .. " ▼"
-                header.Font = Enum.Font.GothamBold
-                header.TextSize = 13
-                header.TextColor3 = Color3.fromRGB(255,255,255)
-                header.BackgroundColor3 = Color3.fromRGB(45,45,45)
-                Instance.new("UICorner", header).CornerRadius = UDim.new(0,6)
-
-                local content = Instance.new("Frame", scroll)
-                content.Size = UDim2.new(1, -16, 0, 0)
-                content.BackgroundTransparency = 1
-                content.Visible = false
-                local contentLayout = Instance.new("UIListLayout", content)
-                contentLayout.Padding = UDim.new(0,4)
-
-                header.MouseButton1Click:Connect(function()
-                    content.Visible = not content.Visible
-                    header.Text = team .. (content.Visible and " ▲" or " ▼")
-                end)
-
-                for locName, pos in pairs(locs) do
-                    if locName == "Spawn" and myTeam ~= team then
-                        continue
-                    end
-                    local b = Instance.new("TextButton", content)
-                    b.Size = UDim2.new(1, -6, 0, 28)
-                    b.Text = locName
-                    b.Font = Enum.Font.Gotham
-                    b.TextSize = 13
-                    b.TextColor3 = Color3.fromRGB(255,255,255)
-                    b.BackgroundColor3 = Color3.fromRGB(70,70,70)
-                    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-                    b.MouseButton1Click:Connect(function() TeleportTo(pos) end)
-                end
-            end
-        end
-
-        rebuildTeleportList()
-        addPerPlayerConn(Players.LocalPlayer, Players.LocalPlayer:GetPropertyChangedSignal("Team"):Connect(rebuildTeleportList))
-    end
-end
-
-
-
 
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
