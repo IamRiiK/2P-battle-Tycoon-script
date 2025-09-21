@@ -25,7 +25,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 --------------------------------------------------------
--- VALUE EDITOR (gabungan: draggable + fitur apply)
+-- VALUE EDITOR FINAL (UI pertama + fungsi UI kedua)
 --------------------------------------------------------
 
 -- Utility: bikin frame draggable
@@ -65,7 +65,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Buat GUI utama
+-- Buat GUI utama (UI pertama)
 local ValueEditorGui = Instance.new("ScreenGui")
 ValueEditorGui.Name = "ValueEditor_GUI"
 ValueEditorGui.ResetOnSpawn = false
@@ -90,7 +90,7 @@ Instance.new("UICorner", VE_Title).CornerRadius = UDim.new(0, 12)
 -- draggable pakai title
 makeDraggable(VE_MainFrame, VE_Title)
 
--- Isi konten editor
+-- Kontainer isi editor
 local VE_Content = Instance.new("ScrollingFrame", VE_MainFrame)
 VE_Content.Size = UDim2.new(1, -10, 1, -50)
 VE_Content.Position = UDim2.new(0, 5, 0, 45)
@@ -102,7 +102,7 @@ local VE_Layout = Instance.new("UIListLayout", VE_Content)
 VE_Layout.Padding = UDim.new(0, 6)
 VE_Layout.SortOrder = Enum.SortOrder.LayoutOrder
 
--- Function bikin editor untuk satu value
+-- Fungsi editor dari UI kedua (dipindahkan ke sini)
 local function createValueEditor(parent, valueInst)
     local frame = Instance.new("Frame")
     frame.Size = UDim2.new(1, -8, 0, 40)
@@ -151,7 +151,7 @@ local function createValueEditor(parent, valueInst)
     end)
 end
 
--- Auto scan semua Value (NumberValue, IntValue, StringValue) di Workspace
+-- Loop: tambahkan semua Value dari Workspace
 for _, obj in pairs(Workspace:GetDescendants()) do
     if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
         createValueEditor(VE_Content, obj)
@@ -159,10 +159,11 @@ for _, obj in pairs(Workspace:GetDescendants()) do
 end
 
 --------------------------------------------------------
--- END Value Editor gabungan
+-- END Value Editor final (UI kedua sudah dihapus)
 --------------------------------------------------------
 
--- lanjut fitur utama lain (ESP, AutoFarm, dll) di bawah sini
+-- lanjut fitur lain (ESP, AutoFarm, dll)
+
 
 
 
