@@ -10,6 +10,7 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
+
 -- Pastikan game sudah load
 if not game:IsLoaded() then game.Loaded:Wait() end
 
@@ -24,12 +25,13 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 --------------------------------------------------------
--- MULAI: Value Editor (tambahan baru)
+-- VALUE EDITOR (gabungan: draggable + fungsi apply)
 --------------------------------------------------------
 
 -- Utility: bikin frame draggable
 local function makeDraggable(frame, dragHandle)
-    local dragging, dragInput, dragStart, startPos
+    local dragging, dragStart, startPos
+
     local function update(input)
         local delta = input.Position - dragStart
         frame.Position = UDim2.new(
@@ -44,6 +46,7 @@ local function makeDraggable(frame, dragHandle)
             dragging  = true
             dragStart = input.Position
             startPos  = frame.Position
+
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
@@ -62,7 +65,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Buat GUI utama Value Editor
+-- Buat GUI utama
 local ValueEditorGui = Instance.new("ScreenGui")
 ValueEditorGui.Name = "ValueEditor_GUI"
 ValueEditorGui.ResetOnSpawn = false
@@ -83,6 +86,7 @@ VE_Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 VE_Title.Text = "🔧 Value Editor"
 Instance.new("UICorner", VE_Title).CornerRadius = UDim.new(0, 12)
 
+-- draggable pakai title
 makeDraggable(VE_MainFrame, VE_Title)
 
 local VE_Content = Instance.new("ScrollingFrame", VE_MainFrame)
@@ -133,6 +137,7 @@ local function createValueEditor(parent, valueInst)
     applyBtn.Text = "Apply"
     Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 8)
 
+    -- apply perubahan value
     applyBtn.MouseButton1Click:Connect(function()
         local num = tonumber(box.Text)
         if num ~= nil then
@@ -144,12 +149,18 @@ local function createValueEditor(parent, valueInst)
     end)
 end
 
+-- (contoh penggunaan: isi dengan semua Value di Workspace)
+for _, obj in pairs(Workspace:GetDescendants()) do
+    if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
+        createValueEditor(VE_Content, obj)
+    end
+end
+
 --------------------------------------------------------
--- SELESAI: Value Editor (tambahan baru)
+-- SELESAI: Value Editor
 --------------------------------------------------------
 
--- Lanjutkan ke fitur lain (ESP, AutoFarm, dll) di bawah sini
-
+-- lanjut fitur utama lain (ESP, AutoFarm, dll) di bawah sini
 
 
 
