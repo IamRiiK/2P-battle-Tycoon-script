@@ -1090,6 +1090,88 @@ for _, value in ipairs(editableValues) do
     end)
 end
 
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local upgrades = player:WaitForChild("Upgrades")
+
+-- Daftar value yang bisa diedit
+local editableValues = {
+    player.leaderstats:WaitForChild("Kills"),
+    player.leaderstats:WaitForChild("Deaths"),
+    upgrades:WaitForChild("WalkSpeed"),
+    upgrades:WaitForChild("Ammo"),
+    upgrades:WaitForChild("Health"),
+    upgrades:WaitForChild("Cash"),
+    upgrades:WaitForChild("Points"), -- <== Rebirth Points
+}
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+ScreenGui.ResetOnSpawn = false
+
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 260, 0, #editableValues * 55 + 30)
+Frame.Position = UDim2.new(0.35, 0, 0.25, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Frame.BorderSizePixel = 0
+Frame.Active = true
+Frame.Draggable = true  -- ✅ ini bikin bisa di-drag
+
+-- Title bar
+local TitleBar = Instance.new("TextLabel", Frame)
+TitleBar.Size = UDim2.new(1, 0, 0, 25)
+TitleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+TitleBar.Text = "⚙ Value Editor"
+TitleBar.TextColor3 = Color3.new(1, 1, 1)
+
+-- Layout
+local UIListLayout = Instance.new("UIListLayout", Frame)
+UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Input Fields
+for _, value in ipairs(editableValues) do
+    local holder = Instance.new("Frame", Frame)
+    holder.Size = UDim2.new(1, -10, 0, 30)
+    holder.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", holder)
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.Text = value.Name
+    label.TextColor3 = Color3.new(1,1,1)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+
+    local input = Instance.new("TextBox", holder)
+    input.Size = UDim2.new(0.4, 0, 1, 0)
+    input.Position = UDim2.new(0.4, 0, 0, 0)
+    input.Text = tostring(value.Value)
+    input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    input.TextColor3 = Color3.new(1,1,1)
+
+    local apply = Instance.new("TextButton", holder)
+    apply.Size = UDim2.new(0.2, -5, 1, 0)
+    apply.Position = UDim2.new(0.8, 0, 0, 0)
+    apply.Text = "Apply"
+    apply.BackgroundColor3 = Color3.fromRGB(70, 130, 70)
+    apply.TextColor3 = Color3.new(1,1,1)
+
+    -- Update otomatis kalau value berubah
+    value:GetPropertyChangedSignal("Value"):Connect(function()
+        input.Text = tostring(value.Value)
+    end)
+
+    -- Tombol apply
+    apply.MouseButton1Click:Connect(function()
+        local num = tonumber(input.Text)
+        if num then
+            value.Value = num
+            print("Updated", value.Name, "=", num)
+        end
+    end)
+end
+
 
 print("✅ Value Editor berhasil dimuat! Semua value (Cash, Points, dll.) siap diubah.")
 
