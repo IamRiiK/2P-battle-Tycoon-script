@@ -1,85 +1,77 @@
--- MAIN SCRIPT (Standalone, no external UI libs)
--- Integrates: ESP, AutoPressE, WalkSpeed, Aimbot, Teleport (per-team dropdown), Hitbox Expander
--- Safe cleanup and rate limiting included
--- Paste & run this in your executor
+-- TPB Refactor — Full merged script
+-- Main UI (left) with toggles + integrated Value Editor section
+-- Passes Editor UI kept as separate window
+if not game:IsLoaded() then game.Loaded:Wait() end
 
--- === SAFE PRE-CLEANUP ===
-if getgenv().__MAIN_SCRIPT_CLEANUP then
-    pcall(getgenv().__MAIN_SCRIPT_CLEANUP)
-end
-
--- Expose cleanup later
-getgenv().__MAIN_SCRIPT_CLEANUP = nil
-
--- === SERVICES & LOCALS ===
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
-local CoreGui = game:GetService("CoreGui")
-
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Try to get PlayerGui safely
-local PlayerGui = nil
-pcall(function() PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 5) end)
-if not PlayerGui then
-    PlayerGui = Instance.new("ScreenGui") -- temporary fallback (we'll parent later)
+local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
+if not Camera then
+    local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
+    Camera = ok and cam or Workspace.CurrentCamera
 end
 
--- VirtualInputManager (optional)
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- === GLOBAL STATE TRACKERS ===
-local FEATURES = {
+local FEATURE = {
     ESP = false,
     AutoE = false,
-    Walk = false,
+    AutoEInterval = 0.5,
+    WalkEnabled = false,
     WalkValue = 30,
     Aimbot = false,
-    AIM_FOV = 8,
+    AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false,
-    Hitbox = false,
 }
-local WALK_UPDATE_INTERVAL = 0.12
 
-local PersistentConns = {}
-local PerPlayerConns = {}
-local HighlightsByPlayer = {}
-local OrigPartSize = setmetatable({}, {__mode="k"})
-local OrigWalkByCharacter = {}
+local WALK_UPDATE_INTERVAL = 0.12 
 
-local function keepConn(conn)
+local PersistentConnections = {}
+local PerPlayerConnections = {}
+
+local function keepPersistent(conn)
     if conn and conn.Disconnect then
-        table.insert(PersistentConns, conn)
+        table.insert(PersistentConnections, conn)
     end
     return conn
 end
 
-local function addPerPlayerConn(p, conn)
-    if not p or not conn then return end
-    PerPlayerConns[p] = PerPlayerConns[p] or {}
-    table.insert(PerPlayerConns[p], conn)
+local function addPerPlayerConnection(p, conn)
+    if not p or not conn then return conn end
+    PerPlayerConnections[p] = PerPlayerConnections[p] or {}
+    table.insert(PerPlayerConnections[p], conn)
     return conn
 end
 
-local function clearPlayerConns(p)
-    local t = PerPlayerConns[p]
+local function clearConnectionsForPlayer(p)
+    local t = PerPlayerConnections[p]
     if t then
-        for _,c in ipairs(t) do pcall(function() c:Disconnect() end) end
-        PerPlayerConns[p] = nil
+        for _,c in ipairs(t) do
+            pcall(function() c:Disconnect() end)
+        end
+        PerPlayerConnections[p] = nil
     end
 end
 
-local function clearAllConns()
-    for _,t in pairs(PerPlayerConns) do
-        for _,c in ipairs(t) do pcall(function() c:Disconnect() end) end
+local function clearAllPerPlayerConnections()
+    for p,_ in pairs(PerPlayerConnections) do
+        clearConnectionsForPlayer(p)
     end
-    PerPlayerConns = {}
-    for _,c in ipairs(PersistentConns) do pcall(function() c:Disconnect() end) end
-    PersistentConns = {}
+end
+
+local function clearAllConnections()
+    clearAllPerPlayerConnections()
+    for _,c in ipairs(PersistentConnections) do
+        pcall(function() c:Disconnect() end)
+    end
+    PersistentConnections = {}
 end
 
 local function safeParentGui(gui)
@@ -87,18 +79,106 @@ local function safeParentGui(gui)
     if PlayerGui and PlayerGui.Parent then
         gui.Parent = PlayerGui
     else
-        pcall(function() gui.Parent = CoreGui end)
+        pcall(function() gui.Parent = PlayerGui end)
     end
 end
 
-local function clamp(v,a,b)
+local function safeWaitCamera()
+    if not (Workspace.CurrentCamera or Camera) then
+        local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
+        if ok and cam then Camera = cam end
+    else
+        Camera = Workspace.CurrentCamera or Camera
+    end
+end
+
+local function clamp(v, a, b)
     if v < a then return a end
     if v > b then return b end
     return v
 end
 
--- === TELEPORT DATA (from your coordinates) ===
-local TeleportPoints = {
+pcall(function()
+    if _G and _G.__TPB_CLEANUP then
+        pcall(_G.__TPB_CLEANUP)
+    end
+    local old = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
+    if old then old:Destroy() end
+    local old2 = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
+    if old2 then old2:Destroy() end
+end)
+
+-- Main ScreenGui & MainFrame
+local MainScreenGui = Instance.new("ScreenGui")
+MainScreenGui.Name = "TPB_TycoonGUI_Final"
+MainScreenGui.DisplayOrder = 9999
+safeParentGui(MainScreenGui)
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0,360,0,560) -- taller to fit Value Editor
+MainFrame.Position = UDim2.new(0.28,0,0.12,0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = MainScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
+
+local TitleBar = Instance.new("Frame", MainFrame)
+TitleBar.Size = UDim2.new(1,0,0,40)
+TitleBar.BackgroundTransparency = 1
+
+local DragHandle = Instance.new("TextLabel", TitleBar)
+DragHandle.Size = UDim2.new(0,28,0,28)
+DragHandle.Position = UDim2.new(0,8,0,6)
+DragHandle.BackgroundTransparency = 1
+DragHandle.Font = Enum.Font.Gotham
+DragHandle.TextSize = 20
+DragHandle.TextColor3 = Color3.fromRGB(200,200,200)
+DragHandle.Text = "≡"
+DragHandle.Active = true
+DragHandle.Selectable = true
+
+local Title = Instance.new("TextLabel", TitleBar)
+Title.Size = UDim2.new(0.6,0,1,0)
+Title.Position = UDim2.new(0.07,0,0,0)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.TextColor3 = Color3.fromRGB(245,245,245)
+Title.Text = "⚔️ 2P Battle Tycoon"
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local HintLabel = Instance.new("TextLabel", TitleBar)
+HintLabel.Size = UDim2.new(0.36,-60,1,0)
+HintLabel.Position = UDim2.new(0.64,0,0,0)
+HintLabel.BackgroundTransparency = 1
+HintLabel.Font = Enum.Font.Gotham
+HintLabel.TextSize = 12
+HintLabel.TextColor3 = Color3.fromRGB(170,170,170)
+HintLabel.Text = "LeftAlt = Hide UI"
+HintLabel.TextXAlignment = Enum.TextXAlignment.Right
+
+local MinBtn = Instance.new("TextButton", TitleBar)
+MinBtn.Size = UDim2.new(0,38,0,28)
+MinBtn.Position = UDim2.new(1,-46,0,6)
+MinBtn.BackgroundColor3 = Color3.fromRGB(58,58,60)
+MinBtn.Font = Enum.Font.GothamBold
+MinBtn.TextSize = 20
+MinBtn.TextColor3 = Color3.fromRGB(240,240,240)
+MinBtn.Text = "-"
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,8)
+
+local Content = Instance.new("Frame", MainFrame)
+Content.Name = "Content"
+Content.Size = UDim2.new(1,-16,1,-56)
+Content.Position = UDim2.new(0,8,0,48)
+Content.BackgroundTransparency = 1
+Instance.new("UIListLayout", Content).Padding = UDim.new(0,12)
+
+-- ===== Teleport: Data + UI (paste ke dalam main script, di area UI/Content) =====
+
+-- 1) Teleport coordinates (your table)
+local TeleportCoords = {
     ["Black"] = {
         Spaceship = Vector3.new(153.2, 683.7, 814.4),
         Bunker = Vector3.new(63.9, 3.3, 143.9),
@@ -160,349 +240,683 @@ local TeleportPoints = {
     }
 }
 
--- === BUILD UI (manual, tabbed) ===
-local Gui = Instance.new("ScreenGui")
-Gui.Name = "MainScriptUI"
-safeParentGui(Gui)
-
-local MainFrame = Instance.new("Frame", Gui)
-MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0,420,0,360)
-MainFrame.Position = UDim2.new(0.18,0,0.15,0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
-MainFrame.BorderSizePixel = 0
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
-
-local TitleBar = Instance.new("Frame", MainFrame)
-TitleBar.Size = UDim2.new(1,0,0,36)
-TitleBar.BackgroundTransparency = 1
-
-local Title = Instance.new("TextLabel", TitleBar)
-Title.Size = UDim2.new(0.7,0,1,0)
-Title.Position = UDim2.new(0.05,0,0,0)
-Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
-Title.TextColor3 = Color3.fromRGB(245,245,245)
-Title.Text = "⚔️ 2P Battle Tycoon — Main Script"
-Title.TextXAlignment = Enum.TextXAlignment.Left
-
-local HideBtn = Instance.new("TextButton", TitleBar)
-HideBtn.Size = UDim2.new(0,36,0,28)
-HideBtn.Position = UDim2.new(1,-44,0,4)
-HideBtn.Text = "—"
-HideBtn.Font = Enum.Font.GothamBold
-HideBtn.TextSize = 18
-HideBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0,6)
-
-local Content = Instance.new("Frame", MainFrame)
-Content.Size = UDim2.new(1,-16,1,-56)
-Content.Position = UDim2.new(0,8,0,48)
-Content.BackgroundTransparency = 1
-
-local TabBar = Instance.new("Frame", Content)
-TabBar.Size = UDim2.new(0,120,1,0)
-TabBar.Position = UDim2.new(0,0,0,0)
-TabBar.BackgroundTransparency = 1
-
-local TabContent = Instance.new("Frame", Content)
-TabContent.Size = UDim2.new(1,-130,1,0)
-TabContent.Position = UDim2.new(0,130,0,0)
-TabContent.BackgroundTransparency = 1
-local TabLayouts = {}
-
--- helper to create tab button + content frame
-local function makeTab(name)
-    local btn = Instance.new("TextButton", TabBar)
-    btn.Size = UDim2.new(1, -8, 0, 34)
-    btn.Position = UDim2.new(0,4,0, (#TabBar:GetChildren()-0)*36)
-    btn.BackgroundColor3 = Color3.fromRGB(46,46,46)
-    btn.Text = name
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 14
-    btn.TextColor3 = Color3.fromRGB(240,240,240)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-
-    local frame = Instance.new("ScrollingFrame", TabContent)
-    frame.Size = UDim2.new(1,-10,1,-10)
-    frame.Position = UDim2.new(0,5,0,5)
-    frame.Visible = false
-    frame.BackgroundTransparency = 1
-    frame.ScrollBarThickness = 6
-    Instance.new("UIListLayout", frame).Padding = UDim.new(0,8)
-    TabLayouts[name] = {button = btn, frame = frame}
-    btn.MouseButton1Click:Connect(function()
-        for _,v in pairs(TabLayouts) do v.frame.Visible = false end
-        frame.Visible = true
-    end)
-    return btn, frame
-end
-
-local btnMain, frameMain = makeTab("Main")
-local btnCombat, frameCombat = makeTab("Combat")
-local btnMove, frameMove = makeTab("Movement")
-local btnTele, frameTele = makeTab("Teleport")
--- open main by default
-frameMain.Visible = true
-
-HideBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
-
--- small helper UI elements
-local function createToggle(parent, labelText, init, onChange)
-    local f = Instance.new("Frame", parent)
-    f.Size = UDim2.new(1,0,0,36)
-    f.BackgroundTransparency = 1
-    local lbl = Instance.new("TextLabel", f)
-    lbl.Size = UDim2.new(0.62,0,1,0)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.Gotham
-    lbl.TextSize = 14
-    lbl.TextColor3 = Color3.fromRGB(230,230,230)
-    lbl.Text = labelText
-
-    local btn = Instance.new("TextButton", f)
-    btn.Size = UDim2.new(0.36,-6,0,28)
-    btn.Position = UDim2.new(0.64,6,0.5,-14)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 13
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-    local state = init
-    local function updateBtn()
-        btn.Text = state and "ON" or "OFF"
-        btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(60,60,60)
+-- 2) Teleport function
+local function TeleportTo(pos)
+    if not pos then return end
+    local char = Players.LocalPlayer and Players.LocalPlayer.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+        if hrp then
+            -- small offset up to avoid ground clipping
+            hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+        end
     end
-    updateBtn()
-    btn.MouseButton1Click:Connect(function()
-        state = not state
-        updateBtn()
-        pcall(onChange, state)
-    end)
-    return f, btn
 end
 
-local function createTextbox(parent, placeholder, default, onEnter)
-    local box = Instance.new("TextBox", parent)
-    box.Size = UDim2.new(1,0,0,30)
-    box.Text = default or ""
-    box.PlaceholderText = placeholder or ""
+-- 3) UI: insert into your existing UI container (I assume variable 'Content' exists from main script)
+-- If your main script uses a different parent, replace 'Content' with that parent frame variable.
+do
+    local parent = Content  -- <-- kalau nama frame UI-mu lain, ganti di sini
+    if not parent then
+        warn("Teleport UI: parent 'Content' tidak ditemukan. Ganti 'parent' ke frame UI-mu yang benar.")
+    else
+        -- wrapper frame
+        local TeleFrame = Instance.new("Frame")
+        TeleFrame.Size = UDim2.new(0, 260, 0, 240)
+        TeleFrame.BackgroundColor3 = Color3.fromRGB(35,35,35)
+        TeleFrame.BorderSizePixel = 0
+        TeleFrame.Parent = parent
+        Instance.new("UICorner", TeleFrame).CornerRadius = UDim.new(0,8)
+
+        local label = Instance.new("TextLabel", TeleFrame)
+        label.Size = UDim2.new(1, -12, 0, 26)
+        label.Position = UDim2.new(0, 6, 0, 6)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 14
+        label.TextColor3 = Color3.fromRGB(240,240,240)
+        label.Text = "📡 Teleport"
+
+        local scroll = Instance.new("ScrollingFrame", TeleFrame)
+        scroll.Size = UDim2.new(1, -12, 1, -38)
+        scroll.Position = UDim2.new(0, 6, 0, 34)
+        scroll.BackgroundTransparency = 1
+        scroll.ScrollBarThickness = 6
+        local layout = Instance.new("UIListLayout", scroll)
+        layout.Padding = UDim.new(0,6)
+
+        local info = Instance.new("TextLabel", TeleFrame)
+        info.Size = UDim2.new(1, -12, 0, 18)
+        info.Position = UDim2.new(0, 6, 1, -20)
+        info.BackgroundTransparency = 1
+        info.Font = Enum.Font.Gotham
+        info.TextSize = 12
+        info.TextColor3 = Color3.fromRGB(200,200,200)
+        info.TextXAlignment = Enum.TextXAlignment.Left
+        info.Text = "Tip: Spawn hanya muncul untuk timmu."
+
+        -- build UI function (rebuilds dropdown list)
+        local function rebuildTeleportList()
+            -- clear children except layout
+            for _,c in ipairs(scroll:GetChildren()) do
+                if not c:IsA("UIListLayout") then
+                    pcall(function() c:Destroy() end)
+                end
+            end
+
+            local myTeam = Players.LocalPlayer and Players.LocalPlayer.Team and Players.LocalPlayer.Team.Name or nil
+
+            for team, locs in pairs(TeleportCoords) do
+                if team == "Flag" then
+                    for locName, pos in pairs(locs) do
+                        local btn = Instance.new("TextButton", scroll)
+                        btn.Size = UDim2.new(1, -8, 0, 30)
+                        btn.AutoButtonColor = true
+                        btn.Text = "Flag - " .. tostring(locName)
+                        btn.Font = Enum.Font.Gotham
+                        btn.TextSize = 13
+                        btn.TextColor3 = Color3.fromRGB(255,255,255)
+                        btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+                        btn.MouseButton1Click:Connect(function()
+                            TeleportTo(pos)
+                        end)
+                    end
+                else
+                    -- header
+                    local header = Instance.new("TextButton", scroll)
+                    header.Size = UDim2.new(1, -8, 0, 30)
+                    header.Text = team .. " ▼"
+                    header.Font = Enum.Font.GothamBold
+                    header.TextSize = 13
+                    header.TextColor3 = Color3.fromRGB(255,255,255)
+                    header.BackgroundColor3 = Color3.fromRGB(45,45,45)
+                    Instance.new("UICorner", header).CornerRadius = UDim.new(0,6)
+
+                    local content = Instance.new("Frame", scroll)
+                    content.Size = UDim2.new(1, -16, 0, 0)
+                    content.Position = UDim2.new(0,8,0,34)
+                    content.BackgroundTransparency = 1
+                    content.Visible = false
+                    local contentLayout = Instance.new("UIListLayout", content)
+                    contentLayout.Padding = UDim.new(0,4)
+
+                    header.MouseButton1Click:Connect(function()
+                        content.Visible = not content.Visible
+                        header.Text = team .. (content.Visible and " ▲" or " ▼")
+                        -- adjust canvas automatically by layout (size left as 0; UIListLayout will manage absolute size)
+                    end)
+
+                    for locName, pos in pairs(locs) do
+                        if locName == "Spawn" then
+                            if myTeam == team then
+                                local b = Instance.new("TextButton", content)
+                                b.Size = UDim2.new(1, -6, 0, 28)
+                                b.Text = "Spawn"
+                                b.Font = Enum.Font.Gotham
+                                b.TextSize = 13
+                                b.TextColor3 = Color3.fromRGB(255,255,255)
+                                b.BackgroundColor3 = Color3.fromRGB(70,70,70)
+                                Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+                                b.MouseButton1Click:Connect(function() TeleportTo(pos) end)
+                            end
+                        else
+                            local b = Instance.new("TextButton", content)
+                            b.Size = UDim2.new(1, -6, 0, 28)
+                            b.Text = locName
+                            b.Font = Enum.Font.Gotham
+                            b.TextSize = 13
+                            b.TextColor3 = Color3.fromRGB(255,255,255)
+                            b.BackgroundColor3 = Color3.fromRGB(70,70,70)
+                            Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+                            b.MouseButton1Click:Connect(function() TeleportTo(pos) end)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- quick buttons (my spawn + flag)
+        local quick = Instance.new("Frame", TeleFrame)
+        quick.Size = UDim2.new(1, -12, 0, 32)
+        quick.Position = UDim2.new(0, 6, 0, 34)
+        quick.BackgroundTransparency = 1
+        local qlayout = Instance.new("UIListLayout", quick)
+        qlayout.FillDirection = Enum.FillDirection.Horizontal
+        qlayout.Padding = UDim.new(0,6)
+
+        local mySpawnBtn = Instance.new("TextButton", quick)
+        mySpawnBtn.Size = UDim2.new(0.5, -6, 1, 0)
+        mySpawnBtn.Text = "Teleport to My Spawn"
+        mySpawnBtn.Font = Enum.Font.Gotham
+        mySpawnBtn.TextSize = 12
+        Instance.new("UICorner", mySpawnBtn).CornerRadius = UDim.new(0,6)
+        mySpawnBtn.BackgroundColor3 = Color3.fromRGB(65,100,65)
+        mySpawnBtn.MouseButton1Click:Connect(function()
+            local mt = Players.LocalPlayer and Players.LocalPlayer.Team and Players.LocalPlayer.Team.Name or nil
+            if mt and TeleportCoords[mt] and TeleportCoords[mt].Spawn then
+                TeleportTo(TeleportCoords[mt].Spawn)
+            else
+                info.Text = "Spawn not available for your team."
+                task.delay(2, function() info.Text = "Tip: Spawn hanya muncul untuk timmu." end)
+            end
+        end)
+
+        local flagBtn = Instance.new("TextButton", quick)
+        flagBtn.Size = UDim2.new(0.5, -6, 1, 0)
+        flagBtn.Text = "Teleport to Flag"
+        flagBtn.Font = Enum.Font.Gotham
+        flagBtn.TextSize = 12
+        Instance.new("UICorner", flagBtn).CornerRadius = UDim.new(0,6)
+        flagBtn.BackgroundColor3 = Color3.fromRGB(70,70,120)
+        flagBtn.MouseButton1Click:Connect(function()
+            if TeleportCoords.Flag and TeleportCoords.Flag.Neutral then
+                TeleportTo(TeleportCoords.Flag.Neutral)
+            end
+        end)
+
+        -- build initial list
+        rebuildTeleportList()
+
+        -- rebuild when player's team changes
+        addPerPlayerConn(Players.LocalPlayer, Players.LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function() rebuildTeleportList() end))
+    end
+end
+-- ===== end teleport block =====
+
+
+local minimized = false
+MinBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    Content.Visible = not minimized
+    MinBtn.Text = minimized and "+" or "-"
+end)
+
+-- make MainFrame draggable
+do
+    local dragging = false
+    local dragInput = nil
+    local dragStart = nil
+    local startPosPixels = nil
+    local dragChangedConn = nil
+
+    local function getScreenSize()
+        local viewportSize = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
+        return viewportSize
+    end
+
+    local function toPixels(udim2)
+        local screen = getScreenSize()
+        local x = udim2.X.Offset + udim2.X.Scale * screen.X
+        local y = udim2.Y.Offset + udim2.Y.Scale * screen.Y
+        return Vector2.new(x, y)
+    end
+
+    local function getInputPos(input)
+        if input and input.Position then
+            return Vector2.new(input.Position.X, input.Position.Y)
+        else
+            return UIS:GetMouseLocation()
+        end
+    end
+
+    local function onInputBegan(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragInput = input
+            dragStart = getInputPos(input)
+            startPosPixels = toPixels(MainFrame.Position)
+
+            if dragChangedConn then
+                pcall(function() dragChangedConn:Disconnect() end)
+                dragChangedConn = nil
+            end
+
+            if input.Changed then
+                dragChangedConn = input.Changed:Connect(function(property)
+                    if property == "UserInputState" and input.UserInputState == Enum.UserInputState.End then
+                        dragging = false
+                        dragInput = nil
+                        if dragChangedConn then
+                            pcall(function() dragChangedConn:Disconnect() end)
+                            dragChangedConn = nil
+                        end
+                    end
+                end)
+                keepPersistent(dragChangedConn)
+            end
+        end
+    end
+
+    local function onInputChanged(input)
+        if not dragging then return end
+        if input ~= dragInput and input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+        local currentPos = getInputPos(input)
+        local delta = currentPos - dragStart
+        local newX = math.floor(startPosPixels.X + delta.X)
+        local newY = math.floor(startPosPixels.Y + delta.Y)
+        local screen = getScreenSize()
+        local frameSize = Vector2.new(MainFrame.AbsoluteSize.X, MainFrame.AbsoluteSize.Y)
+        newX = clamp(newX, 0, math.max(0, screen.X - frameSize.X))
+        newY = clamp(newY, 0, math.max(0, screen.Y - frameSize.Y))
+        MainFrame.Position = UDim2.new(0, newX, 0, newY)
+    end
+
+    local function onInputEnded(input)
+        if input == dragInput then
+            dragging = false
+            dragInput = nil
+            if dragChangedConn then
+                pcall(function() dragChangedConn:Disconnect() end)
+                dragChangedConn = nil
+            end
+        end
+    end
+
+    TitleBar.InputBegan:Connect(onInputBegan)
+    DragHandle.InputBegan:Connect(onInputBegan)
+    keepPersistent(UIS.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            onInputChanged(input)
+        end
+    end))
+    keepPersistent(UIS.InputEnded:Connect(onInputEnded))
+end
+
+-- HUD Gui (mini status)
+local HUDGui = Instance.new("ScreenGui")
+HUDGui.Name = "TPB_TycoonHUD_Final"
+HUDGui.DisplayOrder = 10000
+safeParentGui(HUDGui)
+
+local HUD = Instance.new("Frame", HUDGui)
+HUD.Size = UDim2.new(0,220,0,130)
+HUD.Position = UDim2.new(1,-230,1,-160)
+HUD.BackgroundColor3 = Color3.fromRGB(20,20,20)
+HUD.BackgroundTransparency = 0.06
+HUD.BorderSizePixel = 0
+HUD.Visible = false
+Instance.new("UICorner", HUD).CornerRadius = UDim.new(0,8)
+
+local HUDList = Instance.new("UIListLayout", HUD)
+HUDList.Padding = UDim.new(0,4)
+HUDList.SortOrder = Enum.SortOrder.LayoutOrder
+
+local hudLabels = {}
+local function hudAdd(name)
+    local l = Instance.new("TextLabel", HUD)
+    l.Size = UDim2.new(1,-12,0,20)
+    l.Position = UDim2.new(0,8,0,0)
+    l.BackgroundTransparency = 1
+    l.Font = Enum.Font.Gotham
+    l.TextSize = 14
+    l.TextColor3 = Color3.fromRGB(220,220,220)
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Text = name .. ": OFF"
+    l.Parent = HUD
+    hudLabels[name] = l
+end
+
+hudAdd("ESP")
+hudAdd("Auto Press E")
+hudAdd("WalkSpeed")
+hudAdd("Aimbot")
+
+local function updateHUD(name, state)
+    if hudLabels[name] then
+        hudLabels[name].Text = name .. ": " .. (state and "ON" or "OFF")
+        hudLabels[name].TextColor3 = state and Color3.fromRGB(80,200,120) or Color3.fromRGB(200,200,200)
+    end
+end
+
+keepPersistent(UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.LeftAlt then
+        MainFrame.Visible = not MainFrame.Visible
+        HUD.Visible = not MainFrame.Visible
+    end
+end))
+
+-- Toggle buttons
+local ToggleCallbacks = {}
+local Buttons = {}
+local function registerToggle(displayName, featureKey, onChange)
+    local btn = Instance.new("TextButton", Content)
+    btn.Size = UDim2.new(1,0,0,36)
+    btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+    btn.TextColor3 = Color3.fromRGB(235,235,235)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 15
+    btn.Text = displayName .. " [OFF]"
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+    btn.Parent = Content
+
+    local function setState(state)
+        local old = FEATURE[featureKey]
+        FEATURE[featureKey] = state
+        btn.Text = displayName .. " [" .. (state and "ON" or "OFF") .. "]"
+        btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+        updateHUD(displayName, state)
+        if type(onChange) == "function" then
+            local ok, err = pcall(onChange, state)
+            if not ok then
+                warn("Toggle callback error:", err)
+                FEATURE[featureKey] = old
+            end
+        end
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        setState(not FEATURE[featureKey])
+    end)
+
+    ToggleCallbacks[featureKey] = setState
+    Buttons[featureKey] = btn
+    return btn
+end
+
+do
+    local frame = Instance.new("Frame", Content)
+    frame.Size = UDim2.new(1,0,0,40)
+    frame.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.55,-8,1,0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.Text = "WalkSpeed"
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.45,-12,0,28)
+    box.Position = UDim2.new(0.55,0,0.5,-14)
+    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.TextColor3 = Color3.fromRGB(240,240,240)
     box.Font = Enum.Font.Gotham
     box.TextSize = 13
     box.ClearTextOnFocus = false
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
+    box.Text = tostring(FEATURE.WalkValue)
+    box.PlaceholderText = "16–200 (rec 25-40)"
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+    box.Parent = frame
+
     box.FocusLost:Connect(function(enter)
-        if enter then pcall(onEnter, box.Text) end
-    end)
-    return box
-end
-
--- === Main Tab contents (status) ===
-local infoLabel = Instance.new("TextLabel", frameMain)
-infoLabel.Size = UDim2.new(1,0,0,18)
-infoLabel.BackgroundTransparency = 1
-infoLabel.Font = Enum.Font.Gotham
-infoLabel.TextSize = 14
-infoLabel.TextColor3 = Color3.fromRGB(220,220,220)
-infoLabel.Text = "Status: Ready"
-
--- === ESP Implementation ===
-local function createHighlight(player)
-    if not player or not player.Character then return end
-    if HighlightsByPlayer[player] then return end
-    local humRoot = player.Character
-    local ok, hl = pcall(function()
-        local h = Instance.new("Highlight")
-        h.Adornee = player.Character
-        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        h.FillTransparency = 0.7
-        h.OutlineTransparency = 0
-        h.FillColor = (player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team) and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,40,40)
-        h.Parent = player.Character
-        return h
-    end)
-    if ok and hl then
-        HighlightsByPlayer[player] = hl
-        -- cleanup when character removed
-        addPerPlayerConn(player, player.CharacterRemoving:Connect(function()
-            pcall(function() if hl and hl.Parent then hl:Destroy() end end)
-            HighlightsByPlayer[player] = nil
-        end))
-    end
-end
-
-local function removeAllHighlights()
-    for p,h in pairs(HighlightsByPlayer) do
-        pcall(function() if h and h.Parent then h:Destroy() end end)
-    end
-    HighlightsByPlayer = {}
-end
-
-local espToggleFrame, espToggleBtn = createToggle(frameCombat, "ESP (Highlight)", false, function(state)
-    FEATURES.ESP = state
-    if state then
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then createHighlight(p) end
-        end
-        keepConn(Players.PlayerAdded:Connect(function(p) if p~=LocalPlayer and FEATURES.ESP then addPerPlayerConn(p, p.CharacterAdded:Connect(function() createHighlight(p) end)) end end))
-    else
-        removeAllHighlights()
-    end
-end)
-
--- === Hitbox Expander ===
-local hitboxScale = 1.8
-local hitToggleFrame, hitToggleBtn = createToggle(frameCombat, "Hitbox Expander", false, function(state)
-    FEATURES.Hitbox = state
-    if state then
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                for _,part in ipairs(p.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if not OrigPartSize[part] then OrigPartSize[part] = part.Size end
-                        pcall(function() part.Size = OrigPartSize[part] * hitboxScale end)
-                    end
-                end
+        if enter then
+            local n = tonumber(box.Text)
+            if n and n >= 16 and n <= 200 then
+                FEATURE.WalkValue = n
+                box.Text = tostring(n)
+            else
+                box.Text = tostring(FEATURE.WalkValue)
             end
         end
+    end)
+end
+
+-- ESP implementation
+local espObjects = setmetatable({}, { __mode = "k" })
+
+local function rootPartOfCharacter(char)
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+end
+
+local function getESPColor(p)
+    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
+        return Color3.fromRGB(0,200,0)
     else
-        for part,sz in pairs(OrigPartSize) do
-            pcall(function() if part and part.Parent then part.Size = sz end end)
-        end
-        OrigPartSize = setmetatable({}, {__mode="k"})
+        return Color3.fromRGB(200,40,40)
     end
-end)
+end
 
-local scaleBox = createTextbox(frameCombat, "Hitbox scale (1.0-5.0)", tostring(hitboxScale), function(txt)
-    local n = tonumber(txt)
-    if n and n >= 1 and n <= 5 then hitboxScale = n end
-end)
-
--- apply for newly joined players
-keepConn(Players.PlayerAdded:Connect(function(p)
-    if p ~= LocalPlayer then
-        addPerPlayerConn(p, p.CharacterAdded:Connect(function(char)
-            if FEATURES.Hitbox then
-                task.wait(0.06)
-                for _,part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if not OrigPartSize[part] then OrigPartSize[part] = part.Size end
-                        pcall(function() part.Size = OrigPartSize[part] * hitboxScale end)
-                    end
-                end
+local function clearESPForPlayer(p)
+    if not p then return end
+    local list = espObjects[p]
+    if list then
+        for _,v in pairs(list) do
+            if v and v.Parent then
+                pcall(function() v:Destroy() end)
             end
-        end))
+        end
+        espObjects[p] = nil
     end
-end))
+end
 
--- === Walkspeed & AutoE ===
-local walkBtnFrame, walkBtn = createToggle(frameMove, "Enable WalkSpeed", false, function(state)
-    FEATURES.Walk = state
-    if state then
-        local char = LocalPlayer.Character
+local function updateESPColorForPlayer(p)
+    local list = espObjects[p]
+    if list then
+        for _,hl in ipairs(list) do
+            if hl and hl.Parent then
+                hl.FillColor = getESPColor(p)
+            end
+        end
+    end
+end
+
+local lastRefresh = setmetatable({}, { __mode = "k" })
+local MIN_REFRESH_INTERVAL = 0.12
+
+local function shouldRefreshForPlayer(p)
+    local t = tick()
+    local last = lastRefresh[p] or 0
+    if t - last < MIN_REFRESH_INTERVAL then return false end
+    lastRefresh[p] = t
+    return true
+end
+
+local function createESPForPlayer(p)
+    if not p then return end
+    if not FEATURE.ESP then return end
+
+    if not shouldRefreshForPlayer(p) then return end
+
+    if espObjects[p] then
+        updateESPColorForPlayer(p)
+        return
+    end
+
+    local char = p.Character
+    if not char then return end
+    local root = rootPartOfCharacter(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return end
+
+    local hl = Instance.new("Highlight")
+    hl.Name = "TPB_BoxESP"
+    hl.Adornee = char
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.OutlineTransparency = 0
+    hl.OutlineColor = Color3.fromRGB(255,255,255)
+    hl.FillTransparency = 0.7
+    hl.FillColor = getESPColor(p)
+    hl.Parent = char
+
+    espObjects[p] = { hl }
+end
+
+local function refreshESPForPlayer(p)
+    if FEATURE.ESP then createESPForPlayer(p) else clearESPForPlayer(p) end
+end
+
+local function ensurePlayerListeners(p)
+    if not p then return end
+    if PerPlayerConnections[p] then return end
+
+    addPerPlayerConnection(p, p.CharacterAdded:Connect(function()
+        local char = p.Character
         if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                if OrigWalkByCharacter[char] == nil then OrigWalkByCharacter[char] = hum.WalkSpeed end
-                pcall(function() hum.WalkSpeed = FEATURES.WalkValue end)
-            end
+            char:WaitForChild("HumanoidRootPart", 2)
+            task.wait(0.06)
+            refreshESPForPlayer(p)
+
+            addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
         end
-    else
-        for char,orig in pairs(OrigWalkByCharacter) do
-            pcall(function() if char and char.Parent then local h = char:FindFirstChildOfClass("Humanoid"); if h then h.WalkSpeed = orig end end end)
-        end
-        OrigWalkByCharacter = {}
+    end))
+
+    if p.Character then
+        addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
     end
-end)
 
-local walkValBox = createTextbox(frameMove, "WalkSpeed value (16-200)", tostring(FEATURES.WalkValue), function(txt)
-    local n = tonumber(txt)
-    if n and n >= 16 and n <= 200 then FEATURES.WalkValue = n end
-end)
+    addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
+end
 
--- Walkspeed continuous apply (rate limited)
-keepConn(RunService.Heartbeat:Connect(function(dt)
-    if not FEATURES.Walk then return end
-    -- apply at interval
-    local char = LocalPlayer.Character
-    if char then
+local playersAddedConn = nil
+local playersRemovingConn = nil
+
+local function enableESP()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            ensurePlayerListeners(p)
+            refreshESPForPlayer(p)
+        end
+    end
+
+    if not playersAddedConn then
+        playersAddedConn = keepPersistent(Players.PlayerAdded:Connect(function(p)
+            if p ~= LocalPlayer then
+                ensurePlayerListeners(p)
+                task.wait(0.12)
+                refreshESPForPlayer(p)
+            end
+        end))
+    end
+
+    if not playersRemovingConn then
+        playersRemovingConn = keepPersistent(Players.PlayerRemoving:Connect(function(p)
+            clearESPForPlayer(p)
+            clearConnectionsForPlayer(p)
+        end))
+    end
+end
+
+local function disableESP()
+    for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+end
+
+-- Auto E
+local autoEThread = nil
+local autoEStop = false
+local function startAutoE()
+    if autoEThread then return end
+    if not VIM then
+        FEATURE.AutoE = false
+        warn("AutoE: VirtualInputManager not available. AutoE disabled.")
+        updateHUD("Auto Press E", false)
+        return
+    end
+    autoEStop = false
+    autoEThread = task.spawn(function()
+        while FEATURE.AutoE and not autoEStop do
+            pcall(function()
+                local interval = clamp(FEATURE.AutoEInterval or 0.5, 0.05, 5)
+                pcall(function()
+                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                end)
+                task.wait(interval)
+            end)
+        end
+        autoEThread = nil
+    end)
+    updateHUD("Auto Press E", true)
+end
+
+local function stopAutoE()
+    FEATURE.AutoE = false
+    autoEStop = true
+    updateHUD("Auto Press E", false)
+end
+
+-- WalkSpeed management
+local OriginalWalkByCharacter = {}
+
+local function setPlayerWalkSpeedForCharacter(char, value)
+    if not char then return end
+    pcall(function()
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
-            if OrigWalkByCharacter[char] == nil then OrigWalkByCharacter[char] = hum.WalkSpeed end
-            if hum.WalkSpeed ~= FEATURES.WalkValue then
-                pcall(function() hum.WalkSpeed = FEATURES.WalkValue end)
-            end
+            if OriginalWalkByCharacter[char] == nil then OriginalWalkByCharacter[char] = hum.WalkSpeed end
+            if hum.WalkSpeed ~= value then hum.WalkSpeed = value end
         end
-    end
-end))
+    end)
+end
 
--- Auto Press E toggle
-local autoBtnFrame, autoBtn = createToggle(frameMove, "Auto Press E", false, function(state)
-    FEATURES.AutoE = state
-    if state then
-        -- spawn thread
-        task.spawn(function()
-            local ok, vimService = pcall(function() return game:GetService("VirtualInputManager") end)
-            if not ok or not vimService then
-                -- VirtualInputManager not available
-                FEATURES.AutoE = false
-                autoBtn.Text = "OFF"
-                autoBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-                warn("AutoE requires VirtualInputManager. Disabled.")
-                return
-            end
-            while FEATURES.AutoE do
-                pcall(function()
-                    vimService:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                    vimService:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                end)
-                task.wait(0.5)
+do
+    local acc = 0
+    keepPersistent(RunService.Heartbeat:Connect(function(dt)
+        if not FEATURE.WalkEnabled then return end
+        acc = acc + dt
+        if acc < WALK_UPDATE_INTERVAL then return end
+        acc = 0
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char then
+                setPlayerWalkSpeedForCharacter(char, FEATURE.WalkValue)
             end
         end)
+    end))
+end
+
+local function restoreWalkSpeedForCharacter(char)
+    if not char then return end
+    pcall(function()
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local orig = OriginalWalkByCharacter[char]
+        if hum and orig then
+            hum.WalkSpeed = orig
+        end
+    end)
+    OriginalWalkByCharacter[char] = nil
+end
+
+local function restoreAllWalkSpeeds()
+    for char,_ in pairs(OriginalWalkByCharacter) do
+        restoreWalkSpeedForCharacter(char)
     end
-end)
+    OriginalWalkByCharacter = {}
+    updateHUD("WalkSpeed", false)
+end
 
--- === Aimbot (basic) ===
-local aimToggleFrame, aimToggleBtn = createToggle(frameCombat, "Aimbot", false, function(state)
-    FEATURES.Aimbot = state
-end)
+local function angleBetweenVectors(a, b)
+    local dot = a:Dot(b)
+    local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
+    local val = clamp(dot / m, -1, 1)
+    return math.deg(math.acos(val))
+end
 
-local fovBox = createTextbox(frameCombat, "Aim FOV (deg)", tostring(FEATURES.AIM_FOV), function(txt)
-    local n = tonumber(txt)
-    if n and n > 0 and n <= 180 then FEATURES.AIM_FOV = n end
-end)
-
-local lerpBox = createTextbox(frameCombat, "Aim Lerp (0.01-0.95)", tostring(FEATURES.AIM_LERP), function(txt)
-    local n = tonumber(txt)
-    if n then FEATURES.AIM_LERP = math.clamp(n, 0.01, 0.95) end
-end)
-
-local holdAimFrame, holdAimBtn = createToggle(frameCombat, "Hold Right Mouse to Aim", false, function(state)
-    FEATURES.AIM_HOLD = state
-end)
-
--- Aimbot loop
-keepConn(RunService.RenderStepped:Connect(function()
-    if not FEATURES.Aimbot then return end
-    if FEATURES.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+keepPersistent(RunService.RenderStepped:Connect(function()
+    if not FEATURE.Aimbot then return end
+    if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
     if UIS:GetFocusedTextBox() then return end
-    if not Workspace.CurrentCamera then return end
+    safeWaitCamera()
+    if not Camera or not Camera.CFrame then return end
 
-    local cam = Workspace.CurrentCamera
     local bestHead = nil
     local bestAngle = 1e9
 
     for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character.Parent then
-            local hum = p.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                local targetPart = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
-                if targetPart then
-                    local dir = targetPart.Position - cam.CFrame.Position
-                    if dir.Magnitude > 0.001 then
-                        local ang = math.deg(math.acos(clamp((cam.CFrame.LookVector:Dot(dir.Unit))/(cam.CFrame.LookVector.Magnitude*dir.Unit.Magnitude), -1, 1)))
-                        if ang < bestAngle and ang <= FEATURES.AIM_FOV then
-                            bestAngle = ang
-                            bestHead = targetPart
+        if p ~= LocalPlayer then
+            local okTarget = false
+            if p.Team and LocalPlayer.Team then
+                okTarget = (p.Team ~= LocalPlayer.Team)
+            else
+                okTarget = true
+            end
+            if okTarget and p.Character then
+                local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then
+                else
+                    local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
+                    if head then
+                        local dir = head.Position - Camera.CFrame.Position
+                        if dir.Magnitude > 0.001 then
+                            local ang = angleBetweenVectors(Camera.CFrame.LookVector, dir.Unit)
+                            if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
+                                bestHead = head
+                                bestAngle = ang
+                            end
                         end
                     end
                 end
@@ -510,212 +924,340 @@ keepConn(RunService.RenderStepped:Connect(function()
         end
     end
 
-    if bestHead then
-        pcall(function()
-            local dir = (bestHead.Position - cam.CFrame.Position).Unit
-            local currentLook = cam.CFrame.LookVector
-            local lerpVal = clamp(FEATURES.AIM_LERP, 0.01, 0.95)
+    if bestHead and bestHead.Parent then
+        local success, err = pcall(function()
+            local dir = (bestHead.Position - Camera.CFrame.Position)
+            if dir.Magnitude < 1e-4 then return end
+            dir = dir.Unit
+            local currentLook = Camera.CFrame.LookVector
+            local lerpVal = clamp(FEATURE.AIM_LERP, 0.01, 0.95)
             local blended = currentLook:Lerp(dir, lerpVal)
-            local pos = cam.CFrame.Position
+            local pos = Camera.CFrame.Position
             local targetCFrame = CFrame.new(pos, pos + blended)
-            Workspace.CurrentCamera.CFrame = Workspace.CurrentCamera.CFrame:Lerp(targetCFrame, lerpVal)
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, lerpVal)
         end)
+        if not success then
+            warn("Aimbot camera write error:", err)
+            FEATURE.Aimbot = false
+            updateHUD("Aimbot", false)
+        end
     end
 end))
 
--- === Teleport Tab UI & Logic ===
-local function makeTeleportMenu(parentFrame)
-    local label = Instance.new("TextLabel", parentFrame)
-    label.Size = UDim2.new(1,0,0,18)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.fromRGB(230,230,230)
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 14
-    label.Text = "Teleport"
-
-    local sc = Instance.new("ScrollingFrame", parentFrame)
-    sc.Size = UDim2.new(1,0,1,-24)
-    sc.Position = UDim2.new(0,0,0,24)
-    sc.BackgroundTransparency = 1
-    sc.ScrollBarThickness = 6
-    local layout = Instance.new("UIListLayout", sc)
-    layout.Padding = UDim.new(0,6)
-
-    local function rebuild()
-        for _,c in ipairs(sc:GetChildren()) do
-            if not c:IsA("UIListLayout") then pcall(function() c:Destroy() end) end
-        end
-        local myTeam = LocalPlayer.Team and LocalPlayer.Team.Name or nil
-        for team, locs in pairs(TeleportPoints) do
-            if team == "Flag" then
-                for locName, pos in pairs(locs) do
-                    local btn = Instance.new("TextButton", sc)
-                    btn.Size = UDim2.new(1,-8,0,30)
-                    btn.Text = "Flag - "..locName
-                    btn.Font = Enum.Font.GothamBold
-                    btn.TextColor3 = Color3.fromRGB(255,255,255)
-                    btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-                    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-                    btn.MouseButton1Click:Connect(function()
-                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-                        end
-                    end)
-                end
-            else
-                local header = Instance.new("TextButton", sc)
-                header.Size = UDim2.new(1,-8,0,28)
-                header.Text = team.." ▼"
-                header.Font = Enum.Font.Gotham
-                header.TextColor3 = Color3.fromRGB(255,255,255)
-                header.BackgroundColor3 = Color3.fromRGB(45,45,45)
-                Instance.new("UICorner", header).CornerRadius = UDim.new(0,6)
-
-                local content = Instance.new("Frame", sc)
-                content.Size = UDim2.new(1,-16,0,0)
-                content.Position = UDim2.new(0,8,0,34)
-                content.BackgroundTransparency = 1
-                content.Visible = false
-                local list = Instance.new("UIListLayout", content)
-                list.Padding = UDim.new(0,4)
-                header.MouseButton1Click:Connect(function() content.Visible = not content.Visible end)
-
-                for locName, pos in pairs(locs) do
-                    if locName == "Spawn" then
-                        if myTeam == team then
-                            local b = Instance.new("TextButton", content)
-                            b.Size = UDim2.new(1,-6,0,28)
-                            b.Text = locName
-                            b.Font = Enum.Font.Gotham
-                            b.TextColor3 = Color3.fromRGB(255,255,255)
-                            b.BackgroundColor3 = Color3.fromRGB(70,70,70)
-                            Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-                            b.MouseButton1Click:Connect(function()
-                                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                                    LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-                                end
-                            end)
-                        end
-                    else
-                        local b = Instance.new("TextButton", content)
-                        b.Size = UDim2.new(1,-6,0,28)
-                        b.Text = locName
-                        b.Font = Enum.Font.Gotham
-                        b.TextColor3 = Color3.fromRGB(255,255,255)
-                        b.BackgroundColor3 = Color3.fromRGB(70,70,70)
-                        Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-                        b.MouseButton1Click:Connect(function()
-                            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-                            end
-                        end)
-                    end
-                end
-            end
-        end
+registerToggle("ESP", "ESP", function(state)
+    if state then enableESP() else disableESP() end
+    updateHUD("ESP", state)
+end)
+registerToggle("Auto Press E", "AutoE", function(state)
+    if state then
+        startAutoE()
+    else
+        stopAutoE()
     end
-
-    -- quick buttons
-    local quickFrame = Instance.new("Frame", sc)
-    quickFrame.Size = UDim2.new(1, -8, 0, 32)
-    quickFrame.BackgroundTransparency = 1
-    local quickLayout = Instance.new("UIListLayout", quickFrame)
-    quickLayout.FillDirection = Enum.FillDirection.Horizontal
-    quickLayout.Padding = UDim.new(0,6)
-
-    local btnMySpawn = Instance.new("TextButton", quickFrame)
-    btnMySpawn.Size = UDim2.new(0.5,-6,1,0)
-    btnMySpawn.Text = "Teleport to My Spawn"
-    btnMySpawn.Font = Enum.Font.Gotham
-    btnMySpawn.TextSize = 12
-    Instance.new("UICorner", btnMySpawn).CornerRadius = UDim.new(0,6)
-    btnMySpawn.BackgroundColor3 = Color3.fromRGB(65,100,65)
-    btnMySpawn.MouseButton1Click:Connect(function()
-        local myTeam = LocalPlayer.Team and LocalPlayer.Team.Name or nil
-        if myTeam and TeleportPoints[myTeam] and TeleportPoints[myTeam].Spawn then
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(TeleportPoints[myTeam].Spawn + Vector3.new(0,3,0))
+end)
+registerToggle("WalkSpeed", "WalkEnabled", function(state)
+    if state then
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then
+                OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed
             end
-        else
-            -- feedback
-            infoLabel.Text = "Spawn coord not available for your team."
-            task.defer(function() task.wait(2); infoLabel.Text = "Status: Ready" end)
-        end
-    end)
+            if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+        updateHUD("WalkSpeed", true)
+    else
+        restoreWalkSpeedForCharacter(LocalPlayer.Character)
+    end
+end)
+registerToggle("Aimbot", "Aimbot", function(state)
+    updateHUD("Aimbot", state)
+end)
 
-    local btnFlag = Instance.new("TextButton", quickFrame)
-    btnFlag.Size = UDim2.new(0.5,-6,1,0)
-    btnFlag.Text = "Teleport to Flag"
-    btnFlag.Font = Enum.Font.Gotham
-    btnFlag.TextSize = 12
-    Instance.new("UICorner", btnFlag).CornerRadius = UDim.new(0,6)
-    btnFlag.BackgroundColor3 = Color3.fromRGB(70,70,120)
-    btnFlag.MouseButton1Click:Connect(function()
-        if TeleportPoints.Flag and TeleportPoints.Flag.Neutral then
-            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(TeleportPoints.Flag.Neutral + Vector3.new(0,3,0))
-            end
-        end
-    end)
-
-    -- initial build & team-change refresh
-    rebuild()
-    addPerPlayerConn(LocalPlayer, LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function() rebuild() end))
+for k,_ in pairs(FEATURE) do
+    local display = nil
+    if k == "ESP" then display = "ESP" end
+    if k == "AutoE" then display = "Auto Press E" end
+    if k == "WalkEnabled" then display = "WalkSpeed" end
+    if k == "Aimbot" then display = "Aimbot" end
+    if display then updateHUD(display, FEATURE[k]) end
 end
 
-makeTeleportMenu(frameTele)
+keepPersistent(UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if UIS:GetFocusedTextBox() then return end
+    if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then
+        ToggleCallbacks.ESP(not FEATURE.ESP)
+    elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then
+        ToggleCallbacks.AutoE(not FEATURE.AutoE)
+    elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then
+        ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then
+        ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
+    end
+end))
 
--- === SAFE CLEANUP ===
-getgenv().__MAIN_SCRIPT_CLEANUP = function()
-    -- disable features so loops exit
-    FEATURES.ESP = false
-    FEATURES.AutoE = false
-    FEATURES.Walk = false
-    FEATURES.Aimbot = false
-    FEATURES.Hitbox = false
+keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
+    restoreWalkSpeedForCharacter(char)
+    stopAutoE()
+end))
 
-    -- restore walk speeds
-    for char,ws in pairs(OrigWalkByCharacter) do
+keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if FEATURE.WalkEnabled then
         pcall(function()
-            if char and char.Parent then
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum and ws then hum.WalkSpeed = ws end
-            end
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
+            if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
     end
-    OrigWalkByCharacter = {}
-
-    -- restore part sizes
-    for part, sz in pairs(OrigPartSize) do
-        pcall(function() if part and part.Parent then part.Size = sz end end)
+    if FEATURE.ESP then
+        task.wait(0.2)
+        for _,p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                refreshESPForPlayer(p)
+            end
+        end
     end
-    OrigPartSize = setmetatable({}, {__mode="k"})
+end))
 
-    -- destroy highlights
-    removeAllHighlights()
-
-    -- disconnect per-player connections & persistent ones
-    for p, t in pairs(PerPlayerConns) do
-        for _,c in ipairs(t) do pcall(function() c:Disconnect() end) end
+if _G then
+    _G.__TPB_CLEANUP = function()
+        for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+        pcall(function()
+            local g = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
+            if g then g:Destroy() end
+            local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
+            if gh then gh:Destroy() end
+        end)
+        restoreAllWalkSpeeds()
+        stopAutoE()
+        clearAllConnections()
     end
-    PerPlayerConns = {}
-
-    for _,c in ipairs(PersistentConns) do
-        pcall(function() c:Disconnect() end)
-    end
-    PersistentConns = {}
-
-    -- destroy GUI
-    pcall(function()
-        if Gui and Gui.Parent then Gui:Destroy() end
-    end)
-
-    -- unset global
-    getgenv().__MAIN_SCRIPT_CLEANUP = nil
-    print("[MainScript] cleanup done")
 end
 
--- auto print
-print("Main Script loaded. Call getgenv().__MAIN_SCRIPT_CLEANUP() to cleanup.")
+-- ===========================
+-- Passes Editor UI (kept separate)
+-- ===========================
+local PassesGui = Instance.new("ScreenGui")
+PassesGui.Name = "PassesEditor"
+PassesGui.Parent = game.CoreGui
 
--- === END OF SCRIPT ===
+local PassesFrame = Instance.new("Frame")
+PassesFrame.Size = UDim2.new(0, 300, 0, 400)
+PassesFrame.Position = UDim2.new(0.3, 0, 0.08, 0)
+PassesFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+PassesFrame.Active = true
+PassesFrame.Draggable = true -- legacy property; still supported in some contexts
+PassesFrame.Parent = PassesGui
+
+local PassesTitle = Instance.new("TextLabel")
+PassesTitle.Text = "🎟️ Passes Editor"
+PassesTitle.Size = UDim2.new(1, 0, 0, 40)
+PassesTitle.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+PassesTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+PassesTitle.Font = Enum.Font.SourceSansBold
+PassesTitle.TextSize = 20
+PassesTitle.Parent = PassesFrame
+
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Size = UDim2.new(1, 0, 1, -40)
+ScrollingFrame.Position = UDim2.new(0, 0, 0, 40)
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.ScrollBarThickness = 6
+ScrollingFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ScrollingFrame.Parent = PassesFrame
+
+local function createPassButton(pass)
+    local Button = Instance.new("TextButton")
+    Button.Size = UDim2.new(1, -10, 0, 40)
+    Button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextSize = 18
+    Button.Text = pass.Name .. " : " .. tostring(pass.Value)
+    Button.Parent = ScrollingFrame
+
+    Button.MouseButton1Click:Connect(function()
+        pass.Value = not pass.Value
+        Button.Text = pass.Name .. " : " .. tostring(pass.Value)
+    end)
+
+    return Button
+end
+
+local player = Players.LocalPlayer
+local passesFolder = player:WaitForChild("Passes")
+
+local y = 0
+for _, pass in ipairs(passesFolder:GetChildren()) do
+    if pass:IsA("BoolValue") then
+        local btn = createPassButton(pass)
+        btn.Position = UDim2.new(0, 5, 0, y)
+        y = y + 45
+    end
+end
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, y)
+
+-- ===========================
+-- Integrated Value Editor (moved into MainFrame -> Content)
+-- ===========================
+
+-- Container frame inside Content
+local ValueEditorFrame = Instance.new("Frame", Content)
+ValueEditorFrame.Name = "ValueEditor"
+ValueEditorFrame.Size = UDim2.new(1, -10, 0, 240)
+ValueEditorFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+ValueEditorFrame.BorderSizePixel = 0
+Instance.new("UICorner", ValueEditorFrame).CornerRadius = UDim.new(0,8)
+
+local VE_Label = Instance.new("TextLabel", ValueEditorFrame)
+VE_Label.Size = UDim2.new(1, 0, 0, 28)
+VE_Label.Position = UDim2.new(0,0,0,0)
+VE_Label.BackgroundTransparency = 1
+VE_Label.Text = "🔧 Value Editor"
+VE_Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+VE_Label.Font = Enum.Font.GothamBold
+VE_Label.TextSize = 14
+
+local VE_Scroll = Instance.new("ScrollingFrame", ValueEditorFrame)
+VE_Scroll.Size = UDim2.new(1, -10, 1, -36)
+VE_Scroll.Position = UDim2.new(0, 5, 0, 32)
+VE_Scroll.BackgroundTransparency = 1
+VE_Scroll.ScrollBarThickness = 6
+local VE_Layout = Instance.new("UIListLayout", VE_Scroll)
+VE_Layout.Padding = UDim.new(0, 6)
+VE_Layout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Helper: create editor line for a Value instance
+local function createValueEditorLine(parent, valueInst)
+    if not parent or not valueInst then return end
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -8, 0, 40)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.35, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = valueInst.Name
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.4, -12, 0, 28)
+    box.Position = UDim2.new(0.35, 0, 0.5, -14)
+    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.TextColor3 = Color3.fromRGB(240,240,240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.Text = tostring(valueInst.Value)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+
+    local applyBtn = Instance.new("TextButton", frame)
+    applyBtn.Size = UDim2.new(0.22, -8, 0, 28)
+    applyBtn.Position = UDim2.new(0.75, 0, 0.5, -14)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
+    applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    applyBtn.Font = Enum.Font.GothamBold
+    applyBtn.TextSize = 13
+    applyBtn.Text = "Apply"
+    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0,8)
+
+    local forceEnabled = false
+    local forceThread
+
+    applyBtn.MouseButton1Click:Connect(function()
+        if forceEnabled then
+            -- stop force mode
+            forceEnabled = false
+            applyBtn.Text = "Apply"
+            applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
+        else
+            -- single apply
+            local n = tonumber(box.Text)
+            if n then
+                valueInst.Value = n
+                box.Text = tostring(valueInst.Value)
+            else
+                box.Text = tostring(valueInst.Value)
+            end
+        end
+    end)
+
+    applyBtn.MouseButton2Click:Connect(function()
+        forceEnabled = not forceEnabled
+        if forceEnabled then
+            applyBtn.Text = "Force"
+            applyBtn.BackgroundColor3 = Color3.fromRGB(200,80,80)
+            forceThread = task.spawn(function()
+                while forceEnabled do
+                    local n = tonumber(box.Text)
+                    if n then valueInst.Value = n end
+                    task.wait(0.2)
+                end
+            end)
+        else
+            applyBtn.Text = "Apply"
+            applyBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
+        end
+    end)
+
+    valueInst:GetPropertyChangedSignal("Value"):Connect(function()
+        box.Text = tostring(valueInst.Value)
+    end)
+end
+
+-- Recursively scan folders for numeric values
+local function scanFolderForValues(folder)
+    for _,v in ipairs(folder:GetChildren()) do
+        if v:IsA("IntValue") or v:IsA("NumberValue") then
+            createValueEditorLine(VE_Scroll, v)
+        elseif v:IsA("Folder") then
+            scanFolderForValues(v)
+        end
+    end
+end
+
+local function buildValueEditor()
+    -- clear previous entries
+    for _,c in ipairs(VE_Scroll:GetChildren()) do
+        if not c:IsA("UIListLayout") then
+            c:Destroy()
+        end
+    end
+    -- scan common data locations
+    if LocalPlayer:FindFirstChild("leaderstats") then
+        scanFolderForValues(LocalPlayer.leaderstats)
+    end
+    if LocalPlayer:FindFirstChild("Upgrades") then
+        scanFolderForValues(LocalPlayer.Upgrades)
+    end
+    if LocalPlayer:FindFirstChild("DataFolder") then
+        scanFolderForValues(LocalPlayer.DataFolder)
+    end
+    -- adjust canvas size
+    VE_Scroll.CanvasSize = UDim2.new(0,0,0,VE_Layout.AbsoluteContentSize.Y + 10)
+end
+
+-- initial build
+buildValueEditor()
+
+-- provide a simple refresh button inside ValueEditorFrame
+local refreshBtn = Instance.new("TextButton", ValueEditorFrame)
+refreshBtn.Size = UDim2.new(0, 80, 0, 24)
+refreshBtn.Position = UDim2.new(1, -90, 0, 4)
+refreshBtn.Text = "Refresh"
+refreshBtn.Font = Enum.Font.Gotham
+refreshBtn.TextSize = 12
+refreshBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+refreshBtn.TextColor3 = Color3.fromRGB(230,230,230)
+Instance.new("UICorner", refreshBtn).CornerRadius = UDim.new(0,6)
+refreshBtn.MouseButton1Click:Connect(function() buildValueEditor() end)
+
+print("✅ Value Editor berhasil dimuat! Semua value (Cash, Points, dll.) siap diubah.")
+print("✅ TPB Refactor patched loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
+
+-- End of script
