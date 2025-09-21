@@ -1,34 +1,23 @@
--- 2P Battle Tycoon — Refactored Full Script (Patched, Clean)
--- Features: Draggable UI + HUD + ESP + AutoE + WalkSpeed + Aimbot
--- Fixes applied: per-player connection mapping, drag connection leak fix,
--- walkspeed saved per-character, improved ESP lifecycle, safer camera writes,
--- AutoE cleanup simplification, weak-key esp table, humanoid health checks,
--- fixed ESP distance-culling and accidental removal of per-player listeners
--- CREDIT: RiiK (RiiK26) —
-
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
-
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
--- Camera safety (get or wait)
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
+
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
     Camera = ok and cam or Workspace.CurrentCamera
 end
 
--- Optional exploit API (used only if available)
+
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- Config & state
+
 local FEATURE = {
     ESP = false,
     AutoE = false,
@@ -38,14 +27,14 @@ local FEATURE = {
     Aimbot = false,
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
-    AIM_HOLD = false, -- if true, aimbot only while right mouse held
+    AIM_HOLD = false,
 }
 
-local WALK_UPDATE_INTERVAL = 0.12 -- seconds
+local WALK_UPDATE_INTERVAL = 0.12 
 
--- Connection tracking: persistent vs per-player
+
 local PersistentConnections = {}
-local PerPlayerConnections = {} -- map player -> {conn, conn}
+local PerPlayerConnections = {}
 
 local function keepPersistent(conn)
     if conn and conn.Disconnect then
@@ -85,7 +74,7 @@ local function clearAllConnections()
     PersistentConnections = {}
 end
 
--- Safe UI parenting
+
 local function safeParentGui(gui)
     gui.ResetOnSpawn = false
     if PlayerGui and PlayerGui.Parent then
@@ -110,7 +99,7 @@ local function clamp(v, a, b)
     return v
 end
 
--- Remove any previous GUIs (avoid duplicates when re-running)
+
 pcall(function()
     if _G and _G.__TPB_CLEANUP then
         pcall(_G.__TPB_CLEANUP)
@@ -121,7 +110,7 @@ pcall(function()
     if old2 then old2:Destroy() end
 end)
 
--- Build UI
+
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "TPB_TycoonGUI_Final"
 ScreenGui.DisplayOrder = 9999
@@ -136,7 +125,7 @@ MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
 
--- Title / Drag area
+
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
 TitleBar.BackgroundTransparency = 1
@@ -189,7 +178,6 @@ Content.Position = UDim2.new(0,8,0,48)
 Content.BackgroundTransparency = 1
 Instance.new("UIListLayout", Content).Padding = UDim.new(0,12)
 
--- Minimize button
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
@@ -197,7 +185,7 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
--- Dragging (single, stable implementation)
+
 do
     local dragging = false
     local dragInput = nil
@@ -232,7 +220,7 @@ do
             dragStart = getInputPos(input)
             startPosPixels = toPixels(MainFrame.Position)
 
-            -- guard against leaked Changed connections: disconnect previous if present
+            
             if dragChangedConn then
                 pcall(function() dragChangedConn:Disconnect() end)
                 dragChangedConn = nil
@@ -291,7 +279,7 @@ do
     keepPersistent(UIS.InputEnded:Connect(onInputEnded))
 end
 
--- HUD
+
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
@@ -337,7 +325,7 @@ local function updateHUD(name, state)
     end
 end
 
--- Toggle UI/HUD with LeftAlt
+
 keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
@@ -346,7 +334,7 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     end
 end))
 
--- Toggle helper (create toggle buttons)
+
 local ToggleCallbacks = {}
 local Buttons = {}
 local function registerToggle(displayName, featureKey, onChange)
@@ -370,7 +358,7 @@ local function registerToggle(displayName, featureKey, onChange)
             local ok, err = pcall(onChange, state)
             if not ok then
                 warn("Toggle callback error:", err)
-                FEATURE[featureKey] = old -- rollback on failure
+                FEATURE[featureKey] = old
             end
         end
     end
@@ -384,7 +372,7 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
--- WalkSpeed input (text box)
+
 do
     local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,40)
@@ -424,8 +412,7 @@ do
     end)
 end
 
--- ESP System (Highlight AlwaysOnTop, team colors)
--- use weak-key table so players can be GC'd if necessary
+
 local espObjects = setmetatable({}, { __mode = "k" })
 
 local function rootPartOfCharacter(char)
@@ -434,13 +421,13 @@ end
 
 local function getESPColor(p)
     if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
-        return Color3.fromRGB(0,200,0) -- green for team
+        return Color3.fromRGB(0,200,0)
     else
-        return Color3.fromRGB(200,40,40) -- red for enemy
+        return Color3.fromRGB(200,40,40)
     end
 end
 
--- Clear only highlight objects; do NOT remove per-player listeners here
+
 local function clearESPForPlayer(p)
     if not p then return end
     local list = espObjects[p]
@@ -465,7 +452,7 @@ local function updateESPColorForPlayer(p)
     end
 end
 
--- avoid thrash by small debounce per player
+
 local lastRefresh = setmetatable({}, { __mode = "k" })
 local MIN_REFRESH_INTERVAL = 0.12
 
@@ -481,10 +468,10 @@ local function createESPForPlayer(p)
     if not p then return end
     if not FEATURE.ESP then return end
 
-    -- avoid thrash
+    
     if not shouldRefreshForPlayer(p) then return end
 
-    -- if there's already an ESP object, update color and return
+    
     if espObjects[p] then
         updateESPColorForPlayer(p)
         return
@@ -494,9 +481,9 @@ local function createESPForPlayer(p)
     if not char then return end
     local root = rootPartOfCharacter(char)
     local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum and hum.Health <= 0 then return end -- skip dead
+    if hum and hum.Health <= 0 then return end 
 
-    -- create highlight
+    
     local hl = Instance.new("Highlight")
     hl.Name = "TPB_BoxESP"
     hl.Adornee = char
@@ -505,7 +492,7 @@ local function createESPForPlayer(p)
     hl.OutlineColor = Color3.fromRGB(255,255,255)
     hl.FillTransparency = 0.7
     hl.FillColor = getESPColor(p)
-    hl.Parent = char -- safe to parent to character so it's removed on respawn
+    hl.Parent = char
 
     espObjects[p] = { hl }
 end
@@ -518,30 +505,30 @@ local function refreshESPForPlayer(p)
     end
 end
 
--- Ensure we only attach per-player listeners once
+
 local function ensurePlayerListeners(p)
     if not p then return end
-    if PerPlayerConnections[p] then return end -- already set
+    if PerPlayerConnections[p] then return end 
 
-    -- CharacterAdded: create ESP when char ready
+    
     addPerPlayerConnection(p, p.CharacterAdded:Connect(function()
-        -- small wait for parts to stream in
+        
         local char = p.Character
         if char then
             char:WaitForChild("HumanoidRootPart", 2)
             task.wait(0.06)
             refreshESPForPlayer(p)
-            -- listen for removal
+            
             addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
         end
     end))
 
-    -- If they already have a character at registration, hook removal and possibly create ESP
+    
     if p.Character then
         addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
     end
 
-    -- Team change: update color
+    
     addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
 end
 
@@ -549,7 +536,7 @@ local playersAddedConn = nil
 local playersRemovingConn = nil
 
 local function enableESP()
-    -- Ensure listeners exist for all players, and attempt to create ESP
+    
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             ensurePlayerListeners(p)
@@ -579,7 +566,7 @@ local function disableESP()
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
 end
 
--- Auto Press E
+
 local autoEThread = nil
 local autoEStop = false
 local function startAutoE()
@@ -613,7 +600,7 @@ local function stopAutoE()
     updateHUD("Auto Press E", false)
 end
 
--- WalkSpeed (throttled writes) with save/restore per-character
+
 local OriginalWalkByCharacter = {}
 
 local function setPlayerWalkSpeedForCharacter(char, value)
@@ -627,7 +614,7 @@ local function setPlayerWalkSpeedForCharacter(char, value)
     end)
 end
 
--- heartbeat loop to maintain walkspeed while enabled
+
 do
     local acc = 0
     keepPersistent(RunService.Heartbeat:Connect(function(dt)
@@ -664,7 +651,7 @@ local function restoreAllWalkSpeeds()
     updateHUD("WalkSpeed", false)
 end
 
--- Aimbot helpers
+
 local function angleBetweenVectors(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
@@ -672,7 +659,7 @@ local function angleBetweenVectors(a, b)
     return math.deg(math.acos(val))
 end
 
--- Aimbot loop (RenderStepped)
+
 keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
@@ -731,7 +718,7 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- Register Toggles (UI + callbacks)
+
 registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
     updateHUD("ESP", state)
@@ -761,7 +748,7 @@ registerToggle("Aimbot", "Aimbot", function(state)
     updateHUD("Aimbot", state)
 end)
 
--- Initialize HUD with current states
+
 for k,_ in pairs(FEATURE) do
     local display = nil
     if k == "ESP" then display = "ESP" end
@@ -771,7 +758,7 @@ for k,_ in pairs(FEATURE) do
     if display then updateHUD(display, FEATURE[k]) end
 end
 
--- Hotkeys (F1-F4) -- ignore if typing into TextBox
+
 keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if UIS:GetFocusedTextBox() then return end
@@ -786,15 +773,15 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     end
 end))
 
--- Cleanup for character remove (only local player character cleanup)
+
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
-    -- restore walk speed for this character
+    
     restoreWalkSpeedForCharacter(char)
-    -- stop AutoE
+    
     stopAutoE()
 end))
 
--- Ensure we restore/set walk speed on respawn as well
+
 keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.5)
     if FEATURE.WalkEnabled then
@@ -814,7 +801,7 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     end
 end))
 
--- Provide a global cleanup hook for re-run in some executors
+
 if _G then
     _G.__TPB_CLEANUP = function()
         for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
@@ -830,4 +817,4 @@ if _G then
     end
 end
 
-print("✅ TPB Refactor patched (ESP fixes) loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
+print("✅ TPB Refactor patched loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
