@@ -1,0 +1,173 @@
+-- Coordinate Finder with Dropdown + Team Input
+-- Gunakan ini terpisah, bukan di main script
+
+if _G.__COORD_FINDER_CLEANUP then
+    _G.__COORD_FINDER_CLEANUP()
+end
+
+_G.__COORD_FINDER_CLEANUP = function()
+    if game:GetService("CoreGui"):FindFirstChild("CoordFinderUI") then
+        game:GetService("CoreGui").CoordFinderUI:Destroy()
+    end
+end
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Buat UI
+local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+ScreenGui.Name = "CoordFinderUI"
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 420, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -210, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.Active = true
+MainFrame.Draggable = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+Title.Text = "Coordinate Finder"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+
+-- Input Nama Tim
+local TeamBox = Instance.new("TextBox", MainFrame)
+TeamBox.Size = UDim2.new(1, -20, 0, 35)
+TeamBox.Position = UDim2.new(0, 10, 0, 50)
+TeamBox.PlaceholderText = "Masukkan Nama Tim (contoh: Red)"
+TeamBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+TeamBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+TeamBox.Font = Enum.Font.Gotham
+TeamBox.TextSize = 14
+Instance.new("UICorner", TeamBox).CornerRadius = UDim.new(0, 6)
+
+-- Dropdown Lokasi
+local Locations = {"Spaceship", "Bunker", "PrivateIsland", "Submarine"}
+local SelectedLocation = Locations[1]
+
+local DropDown = Instance.new("TextButton", MainFrame)
+DropDown.Size = UDim2.new(1, -20, 0, 35)
+DropDown.Position = UDim2.new(0, 10, 0, 95)
+DropDown.Text = "Pilih Lokasi: " .. SelectedLocation
+DropDown.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+DropDown.TextColor3 = Color3.fromRGB(255, 255, 255)
+DropDown.Font = Enum.Font.Gotham
+DropDown.TextSize = 14
+Instance.new("UICorner", DropDown).CornerRadius = UDim.new(0, 6)
+
+local DropFrame = Instance.new("Frame", MainFrame)
+DropFrame.Size = UDim2.new(1, -20, 0, #Locations * 30)
+DropFrame.Position = UDim2.new(0, 10, 0, 135)
+DropFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+DropFrame.Visible = false
+Instance.new("UICorner", DropFrame).CornerRadius = UDim.new(0, 6)
+
+local ListLayout = Instance.new("UIListLayout", DropFrame)
+
+for _, loc in ipairs(Locations) do
+    local btn = Instance.new("TextButton", DropFrame)
+    btn.Size = UDim2.new(1, -10, 0, 30)
+    btn.Text = loc
+    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.MouseButton1Click:Connect(function()
+        SelectedLocation = loc
+        DropDown.Text = "Pilih Lokasi: " .. loc
+        DropFrame.Visible = false
+    end)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+end
+
+DropDown.MouseButton1Click:Connect(function()
+    DropFrame.Visible = not DropFrame.Visible
+end)
+
+-- Save & Copy Button
+local SaveButton = Instance.new("TextButton", MainFrame)
+SaveButton.Size = UDim2.new(0.5, -15, 0, 40)
+SaveButton.Position = UDim2.new(0, 10, 0, 135 + #Locations * 30 + 10)
+SaveButton.Text = "Save Current Position"
+SaveButton.BackgroundColor3 = Color3.fromRGB(50, 120, 50)
+SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+SaveButton.Font = Enum.Font.GothamBold
+SaveButton.TextSize = 14
+Instance.new("UICorner", SaveButton).CornerRadius = UDim.new(0, 6)
+
+local CopyButton = Instance.new("TextButton", MainFrame)
+CopyButton.Size = UDim2.new(0.5, -15, 0, 40)
+CopyButton.Position = UDim2.new(0.5, 5, 0, 135 + #Locations * 30 + 10)
+CopyButton.Text = "Copy All"
+CopyButton.BackgroundColor3 = Color3.fromRGB(120, 50, 50)
+CopyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyButton.Font = Enum.Font.GothamBold
+CopyButton.TextSize = 14
+Instance.new("UICorner", CopyButton).CornerRadius = UDim.new(0, 6)
+
+-- Scrolling List
+local ScrollingFrame = Instance.new("ScrollingFrame", MainFrame)
+ScrollingFrame.Size = UDim2.new(1, -20, 0, 120)
+ScrollingFrame.Position = UDim2.new(0, 10, 0, 135 + #Locations * 30 + 60)
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.ScrollBarThickness = 6
+ScrollingFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+local ListLayout2 = Instance.new("UIListLayout", ScrollingFrame)
+ListLayout2.Padding = UDim.new(0, 5)
+
+-- Data koordinat
+local SavedCoords = {}
+
+local function updateList()
+    ScrollingFrame:ClearAllChildren()
+    ListLayout2.Parent = ScrollingFrame
+    for i, entry in ipairs(SavedCoords) do
+        local item = Instance.new("TextLabel", ScrollingFrame)
+        item.Size = UDim2.new(1, -10, 0, 25)
+        item.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+        item.TextColor3 = Color3.fromRGB(200, 200, 200)
+        item.TextSize = 13
+        item.Font = Enum.Font.Gotham
+        item.Text = string.format("[%s] %s = Vector3.new(%.1f, %.1f, %.1f)", entry.team, entry.loc, entry.pos.X, entry.pos.Y, entry.pos.Z)
+        Instance.new("UICorner", item).CornerRadius = UDim.new(0, 4)
+    end
+    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, #SavedCoords * 30)
+end
+
+-- Save
+SaveButton.MouseButton1Click:Connect(function()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local teamName = TeamBox.Text ~= "" and TeamBox.Text or "UnknownTeam"
+        local pos = char.HumanoidRootPart.Position
+        table.insert(SavedCoords, {team = teamName, loc = SelectedLocation, pos = pos})
+        updateList()
+    end
+end)
+
+-- Copy
+CopyButton.MouseButton1Click:Connect(function()
+    local output = ""
+    local grouped = {}
+    for _, entry in ipairs(SavedCoords) do
+        grouped[entry.team] = grouped[entry.team] or {}
+        grouped[entry.team][entry.loc] = entry.pos
+    end
+    for team, locs in pairs(grouped) do
+        output = output .. string.format('["%s"] = {\n', team)
+        for _, loc in ipairs(Locations) do
+            if locs[loc] then
+                local p = locs[loc]
+                output = output .. string.format("    %s = Vector3.new(%.1f, %.1f, %.1f),\n", loc, p.X, p.Y, p.Z)
+            end
+        end
+        output = output .. "},\n"
+    end
+    setclipboard(output)
+end)
+
+updateList()
