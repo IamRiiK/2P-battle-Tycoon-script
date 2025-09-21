@@ -981,6 +981,116 @@ end
 -- panggil pertama kali
 runScan()
 
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local upgrades = player:WaitForChild("Upgrades")
+
+-- Daftar value yang bisa diedit (tambahkan sesuai kebutuhan)
+local editableValues = {
+    upgrades:WaitForChild("Cash"),      -- uang
+    upgrades:WaitForChild("Points"),    -- rebirth points
+    upgrades:WaitForChild("WalkSpeed"),
+    upgrades:WaitForChild("Health"),
+    upgrades:WaitForChild("Ammo"),
+}
+
+-- GUI
+local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+ScreenGui.ResetOnSpawn = false
+
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 260, 0, #editableValues * 55 + 30)
+Frame.Position = UDim2.new(0, 20, 0.3, 0)
+Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Frame.BorderSizePixel = 0
+
+-- Title bar untuk drag
+local TitleBar = Instance.new("TextLabel", Frame)
+TitleBar.Size = UDim2.new(1, 0, 0, 25)
+TitleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+TitleBar.Text = "Value Editor"
+TitleBar.TextColor3 = Color3.new(1, 1, 1)
+
+-- drag system
+local UserInputService = game:GetService("UserInputService")
+local dragging, dragInput, dragStart, startPos
+
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = Frame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+TitleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        Frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X,
+                                   startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- layout dalam frame
+local UIListLayout = Instance.new("UIListLayout", Frame)
+UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- isi editor
+for _, value in ipairs(editableValues) do
+    local holder = Instance.new("Frame", Frame)
+    holder.Size = UDim2.new(1, -10, 0, 30)
+    holder.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", holder)
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.Text = value.Name
+    label.TextColor3 = Color3.new(1,1,1)
+    label.BackgroundTransparency = 1
+    label.TextXAlignment = Enum.TextXAlignment.Left
+
+    local input = Instance.new("TextBox", holder)
+    input.Size = UDim2.new(0.4, 0, 1, 0)
+    input.Position = UDim2.new(0.4, 0, 0, 0)
+    input.Text = tostring(value.Value)
+    input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    input.TextColor3 = Color3.new(1,1,1)
+
+    local apply = Instance.new("TextButton", holder)
+    apply.Size = UDim2.new(0.2, -5, 1, 0)
+    apply.Position = UDim2.new(0.8, 0, 0, 0)
+    apply.Text = "Apply"
+    apply.BackgroundColor3 = Color3.fromRGB(70, 130, 70)
+    apply.TextColor3 = Color3.new(1,1,1)
+
+    -- sinkronisasi realtime
+    value:GetPropertyChangedSignal("Value"):Connect(function()
+        input.Text = tostring(value.Value)
+    end)
+
+    -- tombol apply
+    apply.MouseButton1Click:Connect(function()
+        local num = tonumber(input.Text)
+        if num then
+            value.Value = num
+            print("Updated", value.Name, "=", num)
+        end
+    end)
+end
+
+
 print("✅ Value Editor berhasil dimuat! Semua value (Cash, Points, dll.) siap diubah.")
 
 
