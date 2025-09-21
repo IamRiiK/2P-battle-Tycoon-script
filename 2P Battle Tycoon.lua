@@ -1,4 +1,10 @@
--- TPB Refactor v2 — Main Script (Refactor + Teleport Set / Hitbox Expander)
+
+-- skrip1_final.lua
+-- Final patched skrip1:
+-- 1) Passes Editor & Value Editor removed
+-- 2) Teleport (all team locations visible; Spawn only teleports to your team)
+-- 3) Hitbox Expander (entire body, fixed size 5 studs) + hotkey F6
+-- 4) Aimbot upgraded with linear velocity prediction
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
@@ -17,9 +23,7 @@ end
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- =========================
--- Config / Feature state
--- =========================
+-- Feature configuration
 local FEATURE = {
     ESP = false,
     AutoE = false,
@@ -30,19 +34,91 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false,
-    HitboxEnabled = false,
-    HitboxScale = 1.5, -- multiplier
+    AIM_PREDICT = true,
+    PREDICTION_MULTIPLIER = 1.0,
+    Hitbox = false,
+    Hitbox_Size = 5, -- fixed 5 studs
+    Teleport = true,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
 
+-- teleport coordinates (from you)
+local TEAM_LOCATIONS = {
+["Black"] = {
+    Spaceship = Vector3.new(153.2, 683.7, 814.4),
+    Bunker = Vector3.new(63.9, 3.3, 143.9),
+    PrivateIsland = Vector3.new(145.2, 87.5, 697.5),
+    Submarine = Vector3.new(61.8, -101.0, 154.9),
+    Spawn = Vector3.new(64.1, 72.0, 131.3),
+},
+["White"] = {
+    Spaceship = Vector3.new(-252.3, 683.7, 810.7),
+    Bunker = Vector3.new(-116.3, 3.3, 152.9),
+    PrivateIsland = Vector3.new(-259.7, 87.5, 697.9),
+    Submarine = Vector3.new(-116.6, -101.0, 151.4),
+    Spawn = Vector3.new(-115.7, 72.0, 131.2),
+},
+["Purple"] = {
+    Spaceship = Vector3.new(-922.3, 683.7, 95.3),
+    Bunker = Vector3.new(-263.3, 3.3, 5.7),
+    PrivateIsland = Vector3.new(-807.7, 87.5, 87.4),
+    Submarine = Vector3.new(-265.1, -101.0, 6.4),
+    Spawn = Vector3.new(-240.9, 72.0, 6.2),
+},
+["Orange"] = {
+    Spaceship = Vector3.new(-922.2, 683.7, -309.5),
+    Bunker = Vector3.new(-261.3, 3.3, -173.9),
+    PrivateIsland = Vector3.new(-806.2, 87.5, -318.0),
+    Submarine = Vector3.new(-266.3, -101.0, -174.2),
+    Spawn = Vector3.new(-240.9, 72.0, -174.0),
+},
+["Yellow"] = {
+    Spaceship = Vector3.new(-204.4, 683.7, -979.2),
+    Bunker = Vector3.new(-115.9, 3.3, -317.8),
+    PrivateIsland = Vector3.new(-197.2, 87.5, -868.6),
+    Submarine = Vector3.new(-115.6, -101.0, -319.6),
+    Spawn = Vector3.new(-115.8, 72.0, -299.1),
+},
+["Blue"] = {
+    Spaceship = Vector3.new(200.2, 683.7, -978.8),
+    Bunker = Vector3.new(63.9, 3.3, -316.2),
+    PrivateIsland = Vector3.new(207.6, 87.5, -865.2),
+    Submarine = Vector3.new(63.9, -101.0, -319.2),
+    Spawn = Vector3.new(63.9, 72.0, -298.7),
+},
+["Green"] = {
+    Spaceship = Vector3.new(871.9, 683.7, -263.0),
+    Bunker = Vector3.new(202.8, 3.3, -174.1),
+    PrivateIsland = Vector3.new(755.9, 87.5, -254.9),
+    Submarine = Vector3.new(211.2, -101.0, -173.9),
+    Spawn = Vector3.new(188.5, 72.0, -173.9),
+},
+["Red"] = {
+    Spaceship = Vector3.new(871.2, 683.7, 141.6),
+    Bunker = Vector3.new(204.1, 3.3, 5.9),
+    PrivateIsland = Vector3.new(755.4, 87.5, 149.4),
+    Submarine = Vector3.new(209.8, -101.0, 6.4),
+    Spawn = Vector3.new(188.8, 72.0, 6.1),
+},
+["Flag"] = {
+    Neutral = Vector3.new(-24.8, 42.3, -83.2),
+},
+}
+
+-- internals
 local PersistentConnections = {}
 local PerPlayerConnections = {}
+local espObjects = setmetatable({}, { __mode = "k" })
+local hitboxParts = {} -- [player] = {partname = part}
+local lastPositions = {} -- [player] = {pos=Vector3, vel=Vector3, t=time}
+local lastRefresh = setmetatable({}, { __mode = "k" })
+local MIN_REFRESH_INTERVAL = 0.12
+local OriginalWalkByCharacter = {}
 
+-- helpers
 local function keepPersistent(conn)
-    if conn and conn.Disconnect then
-        table.insert(PersistentConnections, conn)
-    end
+    if conn and conn.Disconnect then table.insert(PersistentConnections, conn) end
     return conn
 end
 
@@ -56,34 +132,24 @@ end
 local function clearConnectionsForPlayer(p)
     local t = PerPlayerConnections[p]
     if t then
-        for _,c in ipairs(t) do
-            pcall(function() c:Disconnect() end)
-        end
+        for _,c in ipairs(t) do pcall(function() c:Disconnect() end) end
         PerPlayerConnections[p] = nil
     end
 end
 
 local function clearAllPerPlayerConnections()
-    for p,_ in pairs(PerPlayerConnections) do
-        clearConnectionsForPlayer(p)
-    end
+    for p,_ in pairs(PerPlayerConnections) do clearConnectionsForPlayer(p) end
 end
 
 local function clearAllConnections()
     clearAllPerPlayerConnections()
-    for _,c in ipairs(PersistentConnections) do
-        pcall(function() c:Disconnect() end)
-    end
+    for _,c in ipairs(PersistentConnections) do pcall(function() c:Disconnect() end) end
     PersistentConnections = {}
 end
 
 local function safeParentGui(gui)
     gui.ResetOnSpawn = false
-    if PlayerGui and PlayerGui.Parent then
-        gui.Parent = PlayerGui
-    else
-        pcall(function() gui.Parent = PlayerGui end)
-    end
+    if PlayerGui and PlayerGui.Parent then gui.Parent = PlayerGui else pcall(function() gui.Parent = PlayerGui end) end
 end
 
 local function safeWaitCamera()
@@ -95,46 +161,42 @@ local function safeWaitCamera()
     end
 end
 
-local function clamp(v, a, b)
-    if v < a then return a end
-    if v > b then return b end
-    return v
-end
-
--- Cleanup from previous run
-pcall(function()
-    if _G and _G.__TPB_CLEANUP then
-        pcall(_G.__TPB_CLEANUP)
-    end
-    local old = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
-    if old then old:Destroy() end
-    local old2 = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
-    if old2 then old2:Destroy() end
-end)
-
--- =========================
--- Globals for teleport storage & hitbox restore
--- =========================
-getgenv().__TPB_TELEPORTS = getgenv().__TPB_TELEPORTS or {} -- structure: TeamName -> { Spaceship = Vector3, ... }
-local OriginalPartSizes = {} -- part -> Vector3
-local OriginalCollisions = {} -- part -> CanCollide
-local espObjects = setmetatable({}, { __mode = "k" })
+local function clamp(v,a,b) if v < a then return a end if v > b then return b end return v end
 
 local function rootPartOfCharacter(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
 end
 
--- =========================
--- UI: Main Screen & Tabs
--- =========================
+local function getESPColor(p)
+    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then return Color3.fromRGB(0,200,0) else return Color3.fromRGB(200,40,40) end
+end
+
+local function shouldRefreshForPlayer(p)
+    local t = tick()
+    local last = lastRefresh[p] or 0
+    if t - last < MIN_REFRESH_INTERVAL then return false end
+    lastRefresh[p] = t
+    return true
+end
+
+-- cleanup previous
+pcall(function()
+    if _G and _G.__TPB_CLEANUP then pcall(_G.__TPB_CLEANUP) end
+    local old = PlayerGui:FindFirstChild("skrip1_final")
+    if old then old:Destroy() end
+    local old2 = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
+    if old2 then old2:Destroy() end
+end)
+
+-- UI
 local MainScreenGui = Instance.new("ScreenGui")
-MainScreenGui.Name = "TPB_TycoonGUI_Final"
+MainScreenGui.Name = "skrip1_final"
 MainScreenGui.DisplayOrder = 9999
 safeParentGui(MainScreenGui)
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 380, 0, 520)
+MainFrame.Size = UDim2.new(0,380,0,560)
 MainFrame.Position = UDim2.new(0.28,0,0.12,0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
@@ -163,7 +225,7 @@ Title.BackgroundTransparency = 1
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 18
 Title.TextColor3 = Color3.fromRGB(245,245,245)
-Title.Text = "⚔️ 2P Battle Tycoon — Refactor"
+Title.Text = "⚔️ 2P Battle Tycoon (skrip1)"
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
 local HintLabel = Instance.new("TextLabel", TitleBar)
@@ -191,6 +253,7 @@ Content.Name = "Content"
 Content.Size = UDim2.new(1,-16,1,-56)
 Content.Position = UDim2.new(0,8,0,48)
 Content.BackgroundTransparency = 1
+Instance.new("UIListLayout", Content).Padding = UDim.new(0,12)
 
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
@@ -244,10 +307,7 @@ do
                     if property == "UserInputState" and input.UserInputState == Enum.UserInputState.End then
                         dragging = false
                         dragInput = nil
-                        if dragChangedConn then
-                            pcall(function() dragChangedConn:Disconnect() end)
-                            dragChangedConn = nil
-                        end
+                        if dragChangedConn then pcall(function() dragChangedConn:Disconnect() end) dragChangedConn = nil end
                     end
                 end)
                 keepPersistent(dragChangedConn)
@@ -275,10 +335,7 @@ do
         if input == dragInput then
             dragging = false
             dragInput = nil
-            if dragChangedConn then
-                pcall(function() dragChangedConn:Disconnect() end)
-                dragChangedConn = nil
-            end
+            if dragChangedConn then pcall(function() dragChangedConn:Disconnect() end) dragChangedConn = nil end
         end
     end
 
@@ -292,15 +349,15 @@ do
     keepPersistent(UIS.InputEnded:Connect(onInputEnded))
 end
 
--- HUD (mini status)
+-- HUD
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
 safeParentGui(HUDGui)
 
 local HUD = Instance.new("Frame", HUDGui)
-HUD.Size = UDim2.new(0,220,0,130)
-HUD.Position = UDim2.new(1,-230,1,-160)
+HUD.Size = UDim2.new(0,220,0,150)
+HUD.Position = UDim2.new(1,-230,1,-180)
 HUD.BackgroundColor3 = Color3.fromRGB(20,20,20)
 HUD.BackgroundTransparency = 0.06
 HUD.BorderSizePixel = 0
@@ -331,6 +388,7 @@ hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
 hudAdd("Hitbox")
+hudAdd("Teleport")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -347,254 +405,69 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     end
 end))
 
--- =========================
--- Tab system
--- =========================
-local TabContainer = Instance.new("Frame", MainFrame)
-TabContainer.Size = UDim2.new(1,-16,0,36)
-TabContainer.Position = UDim2.new(0,8,0,48)
-TabContainer.BackgroundTransparency = 1
-local TabLayout = Instance.new("UIListLayout", TabContainer)
-TabLayout.FillDirection = Enum.FillDirection.Horizontal
-TabLayout.Padding = UDim.new(0, 6)
+-- Toggles
+local ToggleCallbacks = {}
+local Buttons = {}
+local function registerToggle(displayName, featureKey, onChange)
+    local btn = Instance.new("TextButton", Content)
+    btn.Size = UDim2.new(1,0,0,36)
+    btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+    btn.TextColor3 = Color3.fromRGB(235,235,235)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 15
+    btn.Text = displayName .. " [OFF]"
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+    btn.Parent = Content
 
-local Tabs = {}
-local CurrentTab = nil
+    local function setState(state)
+        local old = FEATURE[featureKey]
+        FEATURE[featureKey] = state
+        btn.Text = displayName .. " [" .. (state and "ON" or "OFF") .. "]"
+        btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+        updateHUD(displayName, state)
+        if type(onChange) == "function" then
+            local ok, err = pcall(onChange, state)
+            if not ok then
+                warn("Toggle callback error:", err)
+                FEATURE[featureKey] = old
+            end
+        end
+    end
 
-local function createTab(name)
-    local btn = Instance.new("TextButton", TabContainer)
-    btn.Size = UDim2.new(0, 100, 1, 0)
-    btn.Text = name
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    btn.TextColor3 = Color3.fromRGB(230,230,230)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    btn.MouseButton1Click:Connect(function() setState(not FEATURE[featureKey]) end)
 
-    local tabContent = Instance.new("Frame", Content)
-    tabContent.Size = UDim2.new(1,0,1, -36)
-    tabContent.BackgroundTransparency = 1
-    tabContent.Visible = false
-
-    btn.MouseButton1Click:Connect(function()
-        if CurrentTab then CurrentTab.Visible = false end
-        tabContent.Visible = true
-        CurrentTab = tabContent
-    end)
-
-    Tabs[name] = tabContent
-    return tabContent
-end
-
-local MainTab = createTab("Main")
-local TeleportTab = createTab("Teleport")
-local SettingsTab = createTab("Settings")
-
--- default view
-MainTab.Visible = true
-CurrentTab = MainTab
-
--- Helper to add UI elements quickly
-local function addLabel(parent, text)
-    local l = Instance.new("TextLabel", parent)
-    l.Size = UDim2.new(1,0,0,18)
-    l.BackgroundTransparency = 1
-    l.Font = Enum.Font.Gotham
-    l.TextSize = 13
-    l.TextColor3 = Color3.fromRGB(230,230,230)
-    l.Text = text
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    return l
-end
-
-local function addButton(parent, txt, size)
-    local btn = Instance.new("TextButton", parent)
-    btn.Size = size or UDim2.new(1,0,0,32)
-    btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    btn.TextColor3 = Color3.fromRGB(240,240,240)
-    btn.Text = txt
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    ToggleCallbacks[featureKey] = setState
+    Buttons[featureKey] = btn
     return btn
 end
 
-local function addToggle(parent, name, initial, onChange)
-    local frame = Instance.new("Frame", parent)
-    frame.Size = UDim2.new(1,0,0,36)
+-- WalkSpeed UI
+do
+    local frame = Instance.new("Frame", Content)
+    frame.Size = UDim2.new(1,0,0,40)
     frame.BackgroundTransparency = 1
 
     local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.7,0,1,0)
+    label.Size = UDim2.new(0.55,-8,1,0)
     label.BackgroundTransparency = 1
     label.Font = Enum.Font.Gotham
-    label.TextSize = 14
+    label.TextSize = 13
     label.TextColor3 = Color3.fromRGB(230,230,230)
-    label.Text = name
-    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = "WalkSpeed"
 
-    local btn = Instance.new("TextButton", frame)
-    btn.Size = UDim2.new(0.28,0,0,28)
-    btn.Position = UDim2.new(0.72,0,0.5,-14)
-    btn.BackgroundColor3 = initial and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-    btn.TextColor3 = Color3.fromRGB(245,245,245)
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 13
-    btn.Text = initial and "ON" or "OFF"
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-
-    btn.MouseButton1Click:Connect(function()
-        local new = not FEATURE[name:gsub("%s","")]
-        if type(onChange) == "function" then
-            onChange(new, btn)
-        else
-            FEATURE[name:gsub("%s","")] = new
-            btn.Text = new and "ON" or "OFF"
-            btn.BackgroundColor3 = new and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-        end
-    end)
-
-    return frame, btn
-end
-
--- Layout containers for tabs
-local MainLayout = Instance.new("UIListLayout", MainTab)
-MainLayout.Padding = UDim.new(0,8)
-MainLayout.SortOrder = Enum.SortOrder.LayoutOrder
-MainLayout.Parent = MainTab
-
-local TeleLayout = Instance.new("UIListLayout", TeleportTab)
-TeleLayout.Padding = UDim.new(0,8)
-TeleLayout.SortOrder = Enum.SortOrder.LayoutOrder
-TeleLayout.Parent = TeleportTab
-
-local SettingsLayout = Instance.new("UIListLayout", SettingsTab)
-SettingsLayout.Padding = UDim.new(0,8)
-SettingsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-SettingsLayout.Parent = SettingsTab
-
--- =========================
--- MAIN Tab: feature toggles
--- =========================
--- ESP toggle
-do
-    local frame, btn = addToggle(MainTab, "ESP", FEATURE.ESP, function(state)
-        FEATURE.ESP = state
-        btn.Text = state and "ON" or "OFF"
-        btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-        updateHUD("ESP", state)
-        if state then
-            -- enable esp for current players
-            for _,p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then
-                    -- ensure listeners and refresh
-                    if p.Character then
-                        task.wait(0.05)
-                        local char = p.Character
-                        -- create highlight
-                        if not espObjects[p] then
-                            local hl = Instance.new("Highlight")
-                            hl.Name = "TPB_BoxESP"
-                            hl.Adornee = char
-                            hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                            hl.OutlineTransparency = 0
-                            hl.OutlineColor = Color3.fromRGB(255,255,255)
-                            hl.FillTransparency = 0.7
-                            hl.FillColor = (p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team) and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,40,40)
-                            hl.Parent = char
-                            espObjects[p] = { hl }
-                        end
-                    end
-                end
-            end
-            -- player added/removed handled below via connections
-        else
-            -- clear all esp
-            for p,_ in pairs(espObjects) do
-                for _,v in pairs(espObjects[p]) do
-                    pcall(function() v:Destroy() end)
-                end
-                espObjects[p] = nil
-            end
-        end
-    end)
-end
-
--- Auto Press E
-do
-    local frame, btn = addToggle(MainTab, "Auto Press E", FEATURE.AutoE, function(state)
-        FEATURE.AutoE = state
-        btn.Text = state and "ON" or "OFF"
-        btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-        updateHUD("Auto Press E", state)
-        -- AutoE loop is separate
-    end)
-
-    local subFrame = Instance.new("Frame", MainTab)
-    subFrame.Size = UDim2.new(1,0,0,28)
-    subFrame.BackgroundTransparency = 1
-    local label = Instance.new("TextLabel", subFrame)
-    label.Size = UDim2.new(0.5,0,1,0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 12
-    label.TextColor3 = Color3.fromRGB(200,200,200)
-    label.Text = "Interval (s):"
-    label.TextXAlignment = Enum.TextXAlignment.Left
-
-    local box = Instance.new("TextBox", subFrame)
-    box.Size = UDim2.new(0.48,0,0,24)
-    box.Position = UDim2.new(0.5,0,0.5,-12)
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.45,-12,0,28)
+    box.Position = UDim2.new(0.55,0,0.5,-14)
     box.BackgroundColor3 = Color3.fromRGB(32,32,32)
     box.TextColor3 = Color3.fromRGB(240,240,240)
     box.Font = Enum.Font.Gotham
-    box.TextSize = 12
-    box.ClearTextOnFocus = false
-    box.Text = tostring(FEATURE.AutoEInterval)
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
-    box.FocusLost:Connect(function(enter)
-        if enter then
-            local n = tonumber(box.Text)
-            if n and n >= 0.05 and n <= 5 then
-                FEATURE.AutoEInterval = n
-                box.Text = tostring(n)
-            else
-                box.Text = tostring(FEATURE.AutoEInterval)
-            end
-        end
-    end)
-end
-
--- WalkSpeed (toggle + input)
-do
-    local frame, btn = addToggle(MainTab, "WalkSpeed", FEATURE.WalkEnabled, function(state)
-        FEATURE.WalkEnabled = state
-        btn.Text = state and "ON" or "OFF"
-        btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-        updateHUD("WalkSpeed", state)
-        if state then
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.WalkSpeed = FEATURE.WalkValue
-            end
-        else
-            -- nothing extra: restore handled on character removal via cleanup restore
-        end
-    end)
-
-    local subFrame = Instance.new("Frame", MainTab)
-    subFrame.Size = UDim2.new(1,0,0,28)
-    subFrame.BackgroundTransparency = 1
-    local box = Instance.new("TextBox", subFrame)
-    box.Size = UDim2.new(0.48,0,0,24)
-    box.Position = UDim2.new(0,0,0.5,-12)
-    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
-    box.TextColor3 = Color3.fromRGB(240,240,240)
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 12
+    box.TextSize = 13
     box.ClearTextOnFocus = false
     box.Text = tostring(FEATURE.WalkValue)
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
+    box.PlaceholderText = "16–200 (rec 25-40)"
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+    box.Parent = frame
+
     box.FocusLost:Connect(function(enter)
         if enter then
             local n = tonumber(box.Text)
@@ -608,311 +481,13 @@ do
     end)
 end
 
--- Aimbot toggle + settings
-do
-    local frame, btn = addToggle(MainTab, "Aimbot", FEATURE.Aimbot, function(state)
-        FEATURE.Aimbot = state
-        btn.Text = state and "ON" or "OFF"
-        btn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-        updateHUD("Aimbot", state)
-    end)
-
-    local subFrame = Instance.new("Frame", MainTab)
-    subFrame.Size = UDim2.new(1,0,0,28)
-    subFrame.BackgroundTransparency = 1
-    local fovLabel = Instance.new("TextLabel", subFrame)
-    fovLabel.Size = UDim2.new(0.5,0,1,0)
-    fovLabel.BackgroundTransparency = 1
-    fovLabel.Font = Enum.Font.Gotham
-    fovLabel.TextSize = 12
-    fovLabel.TextColor3 = Color3.fromRGB(200,200,200)
-    fovLabel.Text = "FOV (deg):"
-    fovLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-    local fovBox = Instance.new("TextBox", subFrame)
-    fovBox.Size = UDim2.new(0.48,0,0,24)
-    fovBox.Position = UDim2.new(0.5,0,0.5,-12)
-    fovBox.BackgroundColor3 = Color3.fromRGB(32,32,32)
-    fovBox.TextColor3 = Color3.fromRGB(240,240,240)
-    fovBox.Font = Enum.Font.Gotham
-    fovBox.TextSize = 12
-    fovBox.ClearTextOnFocus = false
-    fovBox.Text = tostring(FEATURE.AIM_FOV_DEG)
-    Instance.new("UICorner", fovBox).CornerRadius = UDim.new(0,6)
-    fovBox.FocusLost:Connect(function(enter)
-        if enter then
-            local n = tonumber(fovBox.Text)
-            if n and n >= 1 and n <= 180 then
-                FEATURE.AIM_FOV_DEG = n
-                fovBox.Text = tostring(n)
-            else
-                fovBox.Text = tostring(FEATURE.AIM_FOV_DEG)
-            end
-        end
-    end)
-end
-
--- =========================
--- Teleport Tab
--- =========================
--- Locations list (fixed names)
-local LocationNames = {"Spaceship", "Bunker", "PrivateIsland", "Submarine"}
-
-addLabel(TeleportTab, "Pilih lokasi lalu tekan Teleport.")
-addLabel(TeleportTab, "Jika belum ada koordinat, gunakan 'Set untuk Tim Saya' saat berada di lokasi.")
-
--- Dropdown (simple emulation using buttons)
-local selectedLocation = LocationNames[1]
-
-local locFrame = Instance.new("Frame", TeleportTab)
-locFrame.Size = UDim2.new(1,0,0,32)
-locFrame.BackgroundTransparency = 1
-local locLabel = Instance.new("TextLabel", locFrame)
-locLabel.Size = UDim2.new(0.6,0,1,0)
-locLabel.BackgroundTransparency = 1
-locLabel.Font = Enum.Font.Gotham
-locLabel.TextSize = 13
-locLabel.TextColor3 = Color3.fromRGB(230,230,230)
-locLabel.Text = "Lokasi: " .. selectedLocation
-locLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local chooseBtn = Instance.new("TextButton", locFrame)
-chooseBtn.Size = UDim2.new(0.38,0,1,0)
-chooseBtn.Position = UDim2.new(0.62,0,0,0)
-chooseBtn.Text = "Ubah Lokasi"
-chooseBtn.Font = Enum.Font.Gotham
-chooseBtn.TextSize = 13
-chooseBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-chooseBtn.TextColor3 = Color3.fromRGB(240,240,240)
-Instance.new("UICorner", chooseBtn).CornerRadius = UDim.new(0,6)
-
--- simple cycle through locations on click
-chooseBtn.MouseButton1Click:Connect(function()
-    for i,name in ipairs(LocationNames) do
-        if name == selectedLocation then
-            local nextIndex = i % #LocationNames + 1
-            selectedLocation = LocationNames[nextIndex]
-            locLabel.Text = "Lokasi: " .. selectedLocation
-            break
-        end
-    end
-end)
-
--- Teleport now button
-local teleBtn = addButton(TeleportTab, "Teleport Sekarang", UDim2.new(1,0,0,36))
-teleBtn.MouseButton1Click:Connect(function()
-    local teamName = tostring(LocalPlayer.Team and LocalPlayer.Team.Name or "Neutral")
-    local tbl = getgenv().__TPB_TELEPORTS[teamName]
-    if tbl and tbl[selectedLocation] then
-        local pos = tbl[selectedLocation]
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            local hrp = LocalPlayer.Character.HumanoidRootPart
-            hrp.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-            print("Teleported to", selectedLocation, "for team", teamName)
-        end
-    else
-        warn("Koordinat untuk lokasi '"..selectedLocation.."' belum diset untuk tim "..teamName..". Gunakan 'Set untuk Tim Saya' terlebih dahulu.")
-    end
-end)
-
--- Set for my team
-local setBtn = addButton(TeleportTab, "Set untuk Tim Saya (pakai posisi saat ini)", UDim2.new(1,0,0,36))
-setBtn.BackgroundColor3 = Color3.fromRGB(80,150,220)
-setBtn.MouseButton1Click:Connect(function()
-    if not LocalPlayer.Team then
-        warn("Tidak ada team terdeteksi. Pastikan Anda sudah berada di team.")
-        return
-    end
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local pos = LocalPlayer.Character.HumanoidRootPart.Position
-        local teamName = tostring(LocalPlayer.Team.Name)
-        getgenv().__TPB_TELEPORTS[teamName] = getgenv().__TPB_TELEPORTS[teamName] or {}
-        getgenv().__TPB_TELEPORTS[teamName][selectedLocation] = pos
-        print("Tersimpan:", teamName, selectedLocation, pos)
-    else
-        warn("Karakter atau HumanoidRootPart tidak ditemukan.")
-    end
-end)
-
--- Optional: Copy/export current teleport table (print to console)
-local exportBtn = addButton(TeleportTab, "Tampilkan Data Teleport (console)", UDim2.new(1,0,0,28))
-exportBtn.BackgroundColor3 = Color3.fromRGB(50,180,50)
-exportBtn.MouseButton1Click:Connect(function()
-    print("===== TPB Teleport Table =====")
-    for team,tbl in pairs(getgenv().__TPB_TELEPORTS) do
-        print(team .. " = {")
-        for loc,vec in pairs(tbl) do
-            print(string.format("  %s = Vector3.new(%.2f, %.2f, %.2f),", loc, vec.X, vec.Y, vec.Z))
-        end
-        print("}")
-    end
-    print("===== End =====")
-end)
-
--- =========================
--- SETTINGS Tab: Hitbox Expander + Cleanup
--- =========================
-addLabel(SettingsTab, "Hitbox Expander (aplikasi ke semua body parts musuh)")
-
-local hitFrame = Instance.new("Frame", SettingsTab)
-hitFrame.Size = UDim2.new(1,0,0,36)
-hitFrame.BackgroundTransparency = 1
-
-local hitLabel = Instance.new("TextLabel", hitFrame)
-hitLabel.Size = UDim2.new(0.55,0,1,0)
-hitLabel.BackgroundTransparency = 1
-hitLabel.Font = Enum.Font.Gotham
-hitLabel.TextSize = 13
-hitLabel.Text = "Scale (1.0 - 5.0):"
-hitLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local hitBox = Instance.new("TextBox", hitFrame)
-hitBox.Size = UDim2.new(0.45, -4, 0, 28)
-hitBox.Position = UDim2.new(0.55, 0, 0.5, -14)
-hitBox.BackgroundColor3 = Color3.fromRGB(32,32,32)
-hitBox.TextColor3 = Color3.fromRGB(240,240,240)
-hitBox.Font = Enum.Font.Gotham
-hitBox.TextSize = 13
-hitBox.ClearTextOnFocus = false
-hitBox.Text = tostring(FEATURE.HitboxScale)
-Instance.new("UICorner", hitBox).CornerRadius = UDim.new(0,8)
-
-local hitToggleFrame, hitToggleBtn = addToggle(SettingsTab, "Hitbox", FEATURE.HitboxEnabled, function(state)
-    FEATURE.HitboxEnabled = state
-    hitToggleBtn.Text = state and "ON" or "OFF"
-    hitToggleBtn.BackgroundColor3 = state and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-    updateHUD("Hitbox", state)
-    if state then
-        -- apply immediately
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character then
-                local char = p.Character
-                for _,part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if not OriginalPartSizes[part] then
-                            OriginalPartSizes[part] = part.Size
-                            OriginalCollisions[part] = part.CanCollide
-                        end
-                        local scale = clamp(tonumber(hitBox.Text) or FEATURE.HitboxScale, 1, 5)
-                        part.Size = OriginalPartSizes[part] * scale
-                        part.CanCollide = false
-                    end
-                end
-            end
-        end
-    else
-        -- restore
-        for part,orig in pairs(OriginalPartSizes) do
-            pcall(function()
-                if part and part.Parent then
-                    part.Size = orig
-                    part.CanCollide = (OriginalCollisions[part] ~= nil) and OriginalCollisions[part] or part.CanCollide
-                end
-            end)
-        end
-        OriginalPartSizes = {}
-        OriginalCollisions = {}
-    end
-end)
-
-hitBox.FocusLost:Connect(function(enter)
-    if enter then
-        local n = tonumber(hitBox.Text)
-        if n and n >= 1 and n <= 5 then
-            FEATURE.HitboxScale = n
-            if FEATURE.HitboxEnabled then
-                -- reapply scale
-                for _,p in ipairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character then
-                        local char = p.Character
-                        for _,part in ipairs(char:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                if not OriginalPartSizes[part] then
-                                    OriginalPartSizes[part] = part.Size
-                                    OriginalCollisions[part] = part.CanCollide
-                                end
-                                part.Size = OriginalPartSizes[part] * n
-                                part.CanCollide = false
-                            end
-                        end
-                    end
-                end
-            end
-        else
-            hitBox.Text = tostring(FEATURE.HitboxScale)
-        end
-    end
-end)
-
--- Cleanup / Uninject button
-local cleanupBtn = addButton(SettingsTab, "Cleanup / Uninject", UDim2.new(1,0,0,36))
-cleanupBtn.BackgroundColor3 = Color3.fromRGB(200,80,80)
-cleanupBtn.MouseButton1Click:Connect(function()
-    if _G and _G.__TPB_CLEANUP then
-        pcall(_G.__TPB_CLEANUP)
-    end
-end)
-
--- =========================
--- HUD / Toggle hotkeys
--- =========================
-local ToggleCallbacks = {}
-local Buttons = {}
-
-local function registerToggle(displayName, featureKey, onChange)
-    ToggleCallbacks[featureKey] = onChange
-end
-
--- hotkeys F1-F4 mapping (like before)
-keepPersistent(UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if UIS:GetFocusedTextBox() then return end
-    if input.KeyCode == Enum.KeyCode.F1 then
-        FEATURE.ESP = not FEATURE.ESP
-        if ToggleCallbacks.ESP then ToggleCallbacks.ESP(FEATURE.ESP) end
-        updateHUD("ESP", FEATURE.ESP)
-    elseif input.KeyCode == Enum.KeyCode.F2 then
-        FEATURE.AutoE = not FEATURE.AutoE
-        updateHUD("Auto Press E", FEATURE.AutoE)
-    elseif input.KeyCode == Enum.KeyCode.F3 then
-        FEATURE.WalkEnabled = not FEATURE.WalkEnabled
-        updateHUD("WalkSpeed", FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 then
-        FEATURE.Aimbot = not FEATURE.Aimbot
-        updateHUD("Aimbot", FEATURE.Aimbot)
-    end
-end))
-
--- =========================
--- ESP Implementation (event-driven where possible)
--- =========================
-local lastRefresh = setmetatable({}, { __mode = "k" })
-local MIN_REFRESH_INTERVAL = 0.12
-
-local function shouldRefreshForPlayer(p)
-    local t = tick()
-    local last = lastRefresh[p] or 0
-    if t - last < MIN_REFRESH_INTERVAL then return false end
-    lastRefresh[p] = t
-    return true
-end
-
-local function getESPColor(p)
-    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then
-        return Color3.fromRGB(0,200,0)
-    else
-        return Color3.fromRGB(200,40,40)
-    end
-end
-
+-- ESP functions
 local function clearESPForPlayer(p)
     if not p then return end
     local list = espObjects[p]
     if list then
         for _,v in pairs(list) do
-            if v and v.Parent then
-                pcall(function() v:Destroy() end)
-            end
+            if v and v.Parent then pcall(function() v:Destroy() end) end
         end
         espObjects[p] = nil
     end
@@ -922,9 +497,7 @@ local function updateESPColorForPlayer(p)
     local list = espObjects[p]
     if list then
         for _,hl in ipairs(list) do
-            if hl and hl.Parent then
-                hl.FillColor = getESPColor(p)
-            end
+            if hl and hl.Parent then hl.FillColor = getESPColor(p) end
         end
     end
 end
@@ -960,39 +533,33 @@ end
 local function ensurePlayerListeners(p)
     if not p then return end
     if PerPlayerConnections[p] then return end
-
     addPerPlayerConnection(p, p.CharacterAdded:Connect(function()
         local char = p.Character
         if char then
             char:WaitForChild("HumanoidRootPart", 2)
             task.wait(0.06)
             refreshESPForPlayer(p)
-
             addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
         end
     end))
-
     if p.Character then
         addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
     end
-
     addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
 end
 
--- initial ESP wiring
 local playersAddedConn = nil
 local playersRemovingConn = nil
-local function enableESPListeners()
+
+local function enableESP()
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then ensurePlayerListeners(p) refreshESPForPlayer(p) end
+    end
     if not playersAddedConn then
         playersAddedConn = keepPersistent(Players.PlayerAdded:Connect(function(p)
-            if p ~= LocalPlayer then
-                ensurePlayerListeners(p)
-                task.wait(0.12)
-                refreshESPForPlayer(p)
-            end
+            if p ~= LocalPlayer then ensurePlayerListeners(p) task.wait(0.12) refreshESPForPlayer(p) end
         end))
     end
-
     if not playersRemovingConn then
         playersRemovingConn = keepPersistent(Players.PlayerRemoving:Connect(function(p)
             clearESPForPlayer(p)
@@ -1000,11 +567,12 @@ local function enableESPListeners()
         end))
     end
 end
-enableESPListeners()
 
--- =========================
--- AutoE implementation (rate-limited)
--- =========================
+local function disableESP()
+    for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+end
+
+-- AutoE
 local autoEThread = nil
 local autoEStop = false
 local function startAutoE()
@@ -1038,21 +606,7 @@ local function stopAutoE()
     updateHUD("Auto Press E", false)
 end
 
--- Watch FEATURE.AutoE change
-keepPersistent(RunService.Heartbeat:Connect(function()
-    -- start/stop autoE depending on feature
-    if FEATURE.AutoE and not autoEThread then
-        startAutoE()
-    elseif not FEATURE.AutoE and autoEThread then
-        stopAutoE()
-    end
-end))
-
--- =========================
--- WalkSpeed management (optimized)
--- =========================
-local OriginalWalkByCharacter = {}
-
+-- WalkSpeed management
 local function setPlayerWalkSpeedForCharacter(char, value)
     if not char then return end
     pcall(function()
@@ -1073,9 +627,7 @@ do
         acc = 0
         pcall(function()
             local char = LocalPlayer.Character
-            if char then
-                setPlayerWalkSpeedForCharacter(char, FEATURE.WalkValue)
-            end
+            if char then setPlayerWalkSpeedForCharacter(char, FEATURE.WalkValue) end
         end)
     end))
 end
@@ -1085,31 +637,186 @@ local function restoreWalkSpeedForCharacter(char)
     pcall(function()
         local hum = char:FindFirstChildOfClass("Humanoid")
         local orig = OriginalWalkByCharacter[char]
-        if hum and orig then
-            hum.WalkSpeed = orig
-        end
+        if hum and orig then hum.WalkSpeed = orig end
     end)
     OriginalWalkByCharacter[char] = nil
 end
 
 local function restoreAllWalkSpeeds()
-    for char,_ in pairs(OriginalWalkByCharacter) do
-        restoreWalkSpeedForCharacter(char)
-    end
+    for char,_ in pairs(OriginalWalkByCharacter) do restoreWalkSpeedForCharacter(char) end
     OriginalWalkByCharacter = {}
     updateHUD("WalkSpeed", false)
 end
 
--- =========================
--- Aimbot (RenderStepped, rate-limited & safe)
--- =========================
-local function angleBetweenVectors(a, b)
+-- Hitbox expander (entire body)
+local function createHitboxesForPlayer(p)
+    if not p or not p.Character then return end
+    -- clear any existing
+    if hitboxParts[p] then
+        for _,part in pairs(hitboxParts[p]) do
+            if part and part.Parent then pcall(function() part:Destroy() end) end
+        end
+    end
+    hitboxParts[p] = {}
+    -- iterate character descendants and create invisible welded parts for each BasePart
+    for _,desc in ipairs(p.Character:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            -- skip accessories' handle duplicates sometimes; but still create to expand
+            local hb = Instance.new("Part")
+            hb.Name = "TPB_Hitbox_" .. desc.Name
+            hb.Size = Vector3.new(FEATURE.Hitbox_Size, FEATURE.Hitbox_Size, FEATURE.Hitbox_Size)
+            hb.Transparency = 1
+            hb.CanCollide = false
+            hb.Anchored = false
+            hb.Massless = true
+            hb.Parent = workspace
+            -- weld using WeldConstraint or Weld
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = hb
+            weld.Part1 = desc
+            weld.Parent = hb
+            hitboxParts[p][desc.Name] = hb
+        end
+    end
+end
+
+local function clearHitboxesForPlayer(p)
+    if not p then return end
+    if hitboxParts[p] then
+        for _,part in pairs(hitboxParts[p]) do if part and part.Parent then pcall(function() part:Destroy() end) end end
+        hitboxParts[p] = nil
+    end
+end
+
+local function enableHitboxes()
+    for _,p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then createHitboxesForPlayer(p) end end
+    keepPersistent(Players.PlayerAdded:Connect(function(p) if p ~= LocalPlayer and FEATURE.Hitbox then task.wait(0.12) createHitboxesForPlayer(p) end end))
+    keepPersistent(Players.PlayerRemoving:Connect(function(p) clearHitboxesForPlayer(p) end))
+    -- keep sizes updated
+    keepPersistent(RunService.Heartbeat:Connect(function()
+        if not FEATURE.Hitbox then return end
+        for p,parts in pairs(hitboxParts) do
+            for name,part in pairs(parts) do
+                if part and part.Parent then
+                    part.Size = Vector3.new(FEATURE.Hitbox_Size, FEATURE.Hitbox_Size, FEATURE.Hitbox_Size)
+                end
+            end
+        end
+    end))
+end
+
+local function disableHitboxes()
+    for p,_ in pairs(hitboxParts) do clearHitboxesForPlayer(p) end
+end
+
+-- Teleport UI
+local TeleportFrame = Instance.new("Frame", Content)
+TeleportFrame.Size = UDim2.new(1,0,0,220)
+TeleportFrame.BackgroundTransparency = 1
+
+local TP_Label = Instance.new("TextLabel", TeleportFrame)
+TP_Label.Size = UDim2.new(1,0,0,20)
+TP_Label.BackgroundTransparency = 1
+TP_Label.Font = Enum.Font.GothamBold
+TP_Label.TextSize = 13
+TP_Label.TextColor3 = Color3.fromRGB(240,240,240)
+TP_Label.Text = "📍 Teleport (All teams available)"
+
+local Scroll = Instance.new("ScrollingFrame", TeleportFrame)
+Scroll.Size = UDim2.new(1,0,0,200)
+Scroll.Position = UDim2.new(0,0,0,22)
+Scroll.CanvasSize = UDim2.new(0,0,0,0)
+Scroll.ScrollBarThickness = 6
+Scroll.BackgroundTransparency = 1
+local sLayout = Instance.new("UIListLayout", Scroll)
+sLayout.Padding = UDim.new(0,6)
+sLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local function makeTeleportButton(text, callback)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,160,0,28)
+    b.Text = text
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 13
+    b.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    b.Parent = Scroll
+    b.MouseButton1Click:Connect(callback)
+    return b
+end
+
+local function buildTeleportButtons()
+    for _,c in ipairs(Scroll:GetChildren()) do if not c:IsA("UIListLayout") then c:Destroy() end end
+    local y = 0
+    for teamName,locs in pairs(TEAM_LOCATIONS) do
+        for locName,pos in pairs(locs) do
+            local label = teamName .. " - " .. locName
+            makeTeleportButton(label, function()
+                pcall(function()
+                    if not LocalPlayer.Character then return end
+                    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return end
+                    -- Spawn button only teleports to your team spawn
+                    if locName == "Spawn" then
+                        if LocalPlayer.Team and LocalPlayer.Team.Name == teamName then
+                            hrp.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
+                        else
+                            -- do nothing (spawn of other team disabled)
+                        end
+                    else
+                        -- other locations allowed for all teams
+                        hrp.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
+                    end
+                end)
+            end)
+            y = y + 34
+        end
+    end
+    -- add Flag Neutral explicitly if not present
+    if TEAM_LOCATIONS["Flag"] and TEAM_LOCATIONS["Flag"].Neutral then
+        makeTeleportButton("Flag - Neutral", function()
+            pcall(function()
+                if not LocalPlayer.Character then return end
+                local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then hrp.CFrame = CFrame.new(TEAM_LOCATIONS["Flag"].Neutral + Vector3.new(0,3,0)) end
+            end)
+        end)
+        y = y + 34
+    end
+    Scroll.CanvasSize = UDim2.new(0,0,0,y)
+end
+
+buildTeleportButtons()
+
+-- Aimbot prediction helper
+local function angleBetweenVectors(a,b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
     local val = clamp(dot / m, -1, 1)
     return math.deg(math.acos(val))
 end
 
+-- track positions & velocities
+keepPersistent(RunService.RenderStepped:Connect(function(dt)
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            local now = tick()
+            local prev = lastPositions[p]
+            if prev then
+                local dv = hrp.Position - prev.pos
+                local dt_local = math.max(now - prev.t, 1e-6)
+                prev.vel = dv / dt_local
+                prev.pos = hrp.Position
+                prev.t = now
+            else
+                lastPositions[p] = { pos = hrp.Position, vel = Vector3.new(0,0,0), t = now }
+            end
+        end
+    end
+end))
+
+-- main aimbot renderstepped
 keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
@@ -1117,28 +824,23 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     safeWaitCamera()
     if not Camera or not Camera.CFrame then return end
 
-    local bestHead = nil
+    local bestPart = nil
     local bestAngle = 1e9
 
     for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
-            local okTarget = false
-            if p.Team and LocalPlayer.Team then
-                okTarget = (p.Team ~= LocalPlayer.Team)
-            else
-                okTarget = true
-            end
+            local okTarget = true
+            if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) end
             if okTarget and p.Character then
                 local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                if not hum or hum.Health <= 0 then
-                else
-                    local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
-                    if head then
-                        local dir = head.Position - Camera.CFrame.Position
+                if hum and hum.Health > 0 then
+                    local targetPart = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
+                    if targetPart then
+                        local dir = targetPart.Position - Camera.CFrame.Position
                         if dir.Magnitude > 0.001 then
                             local ang = angleBetweenVectors(Camera.CFrame.LookVector, dir.Unit)
                             if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
-                                bestHead = head
+                                bestPart = targetPart
                                 bestAngle = ang
                             end
                         end
@@ -1148,9 +850,25 @@ keepPersistent(RunService.RenderStepped:Connect(function()
         end
     end
 
-    if bestHead and bestHead.Parent then
+    if bestPart and bestPart.Parent then
         local success, err = pcall(function()
-            local dir = (bestHead.Position - Camera.CFrame.Position)
+            local targetPos = bestPart.Position
+            if FEATURE.AIM_PREDICT then
+                -- find owner player
+                local owner = nil
+                for _,p in ipairs(Players:GetPlayers()) do
+                    if p.Character == bestPart.Parent then owner = p; break end
+                end
+                if owner and lastPositions[owner] then
+                    local lp = lastPositions[owner]
+                    local vel = lp.vel or Vector3.new(0,0,0)
+                    local toTarget = targetPos - Camera.CFrame.Position
+                    local dist = toTarget.Magnitude
+                    local leadTime = clamp((dist / 200), 0, 1.5) * (FEATURE.PREDICTION_MULTIPLIER or 1)
+                    targetPos = targetPos + vel * leadTime
+                end
+            end
+            local dir = (targetPos - Camera.CFrame.Position)
             if dir.Magnitude < 1e-4 then return end
             dir = dir.Unit
             local currentLook = Camera.CFrame.LookVector
@@ -1168,80 +886,50 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- =========================
--- Hitbox Expander handlers (apply/restore on player join/leave)
--- =========================
-local function expandCharacterParts(char, scale)
-    if not char then return end
-    for _,part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            if not OriginalPartSizes[part] then
-                OriginalPartSizes[part] = part.Size
-                OriginalCollisions[part] = part.CanCollide
-            end
-            pcall(function()
-                part.Size = OriginalPartSizes[part] * scale
-                part.CanCollide = false
-            end)
-        end
+-- Register toggles
+registerToggle("ESP", "ESP", function(state) if state then enableESP() else disableESP() end updateHUD("ESP", state) end)
+registerToggle("Auto Press E", "AutoE", function(state) if state then startAutoE() else stopAutoE() end end)
+registerToggle("WalkSpeed", "WalkEnabled", function(state)
+    if state then
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
+            if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+        updateHUD("WalkSpeed", true)
+    else
+        restoreWalkSpeedForCharacter(LocalPlayer.Character)
     end
+end)
+registerToggle("Aimbot", "Aimbot", function(state) updateHUD("Aimbot", state) end)
+registerToggle("Hitbox", "Hitbox", function(state) if state then enableHitboxes() else disableHitboxes() end updateHUD("Hitbox", state) end)
+registerToggle("Teleport", "Teleport", function(state) updateHUD("Teleport", state) end)
+
+-- initial HUD states
+for k,_ in pairs(FEATURE) do
+    local display = nil
+    if k == "ESP" then display = "ESP" end
+    if k == "AutoE" then display = "Auto Press E" end
+    if k == "WalkEnabled" then display = "WalkSpeed" end
+    if k == "Aimbot" then display = "Aimbot" end
+    if k == "Hitbox" then display = "Hitbox" end
+    if k == "Teleport" then display = "Teleport" end
+    if display then updateHUD(display, FEATURE[k]) end
 end
 
-local function restoreCharacterParts(char)
-    if not char then return end
-    for _,part in ipairs(char:GetDescendants()) do
-        if part:IsA("BasePart") then
-            pcall(function()
-                if OriginalPartSizes[part] then
-                    part.Size = OriginalPartSizes[part]
-                    part.CanCollide = (OriginalCollisions[part] ~= nil) and OriginalCollisions[part] or part.CanCollide
-                    OriginalPartSizes[part] = nil
-                    OriginalCollisions[part] = nil
-                end
-            end)
-        end
+-- Keybinds (F1-F6; F6 = Hitbox)
+keepPersistent(UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if UIS:GetFocusedTextBox() then return end
+    if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then ToggleCallbacks.ESP(not FEATURE.ESP)
+    elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
+    elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
+    elseif input.KeyCode == Enum.KeyCode.F6 and ToggleCallbacks.Hitbox then ToggleCallbacks.Hitbox(not FEATURE.Hitbox)
     end
-end
-
--- watch players to apply/restore when characters spawn
-keepPersistent(Players.PlayerAdded:Connect(function(p)
-    if p == LocalPlayer then return end
-    addPerPlayerConnection(p, p.CharacterAdded:Connect(function(char)
-        if FEATURE.HitboxEnabled then
-            task.wait(0.05)
-            expandCharacterParts(char, FEATURE.HitboxScale)
-        end
-        -- ensure cleanup connection to restore when character removed
-        addPerPlayerConnection(p, p.CharacterRemoving:Connect(function()
-            restoreCharacterParts(char)
-        end))
-    end))
 end))
 
--- apply existing players
-for _,p in ipairs(Players:GetPlayers()) do
-    ensurePlayerListeners(p)
-    if p ~= LocalPlayer and p.Character and FEATURE.HitboxEnabled then
-        expandCharacterParts(p.Character, FEATURE.HitboxScale)
-    end
-end
-
--- =========================
--- Player removal handling: cleanup original sizes
--- =========================
-keepPersistent(Players.PlayerRemoving:Connect(function(p)
-    -- clear esp
-    clearESPForPlayer(p)
-    -- clear original sizes that belong to this player's character parts
-    if p.Character then
-        restoreCharacterParts(p.Character)
-    end
-    clearConnectionsForPlayer(p)
-end))
-
--- =========================
--- Local player character events (restore walk speed & stop autoE on death)
--- =========================
+-- Character events
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
     restoreWalkSpeedForCharacter(char)
     stopAutoE()
@@ -1258,75 +946,29 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     end
     if FEATURE.ESP then
         task.wait(0.2)
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                refreshESPForPlayer(p)
-            end
-        end
+        for _,p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then refreshESPForPlayer(p) end end
+    end
+    if FEATURE.Hitbox then
+        task.wait(0.2)
+        for _,p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then createHitboxesForPlayer(p) end end
     end
 end))
 
--- =========================
--- Safe cleanup function
--- =========================
+-- Global cleanup
 if _G then
     _G.__TPB_CLEANUP = function()
-        -- destroy GUIs
+        for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+        for p,_ in pairs(hitboxParts) do clearHitboxesForPlayer(p) end
         pcall(function()
-            local g = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
+            local g = PlayerGui:FindFirstChild("skrip1_final")
             if g then g:Destroy() end
             local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
             if gh then gh:Destroy() end
         end)
-
-        -- restore esp
-        for p,_ in pairs(espObjects) do
-            clearESPForPlayer(p)
-        end
-        espObjects = {}
-
-        -- restore hitboxes
-        for part,orig in pairs(OriginalPartSizes) do
-            pcall(function()
-                if part and part.Parent then
-                    part.Size = orig
-                    part.CanCollide = (OriginalCollisions[part] ~= nil) and OriginalCollisions[part] or part.CanCollide
-                end
-            end)
-        end
-        OriginalPartSizes = {}
-        OriginalCollisions = {}
-
-        -- restore walks
         restoreAllWalkSpeeds()
-
-        -- stop autoE
         stopAutoE()
-
-        -- disconnect connections
         clearAllConnections()
-
-        -- clear teleport storage (optional: keep if you want, here we keep it)
-        -- getgenv().__TPB_TELEPORTS = nil
-
-        print("[TPB Refactor] cleanup complete.")
     end
 end
 
--- =========================
--- Initial HUD values
--- =========================
-updateHUD("ESP", FEATURE.ESP)
-updateHUD("Auto Press E", FEATURE.AutoE)
-updateHUD("WalkSpeed", FEATURE.WalkEnabled)
-updateHUD("Aimbot", FEATURE.Aimbot)
-updateHUD("Hitbox", FEATURE.HitboxEnabled)
-
--- =========================
--- Final notes to user (console)
--- =========================
-print("✅ TPB Refactor v2 loaded.")
-print("Fitur: ESP, AutoPressE, WalkSpeed, Aimbot, Teleport, Hitbox Expander.")
-print("Cara set teleport: pindah ke lokasi (Spaceship/Bunker/PrivateIsland/Submarine) untuk TIMMU, lalu buka tab Teleport -> pilih lokasi -> tekan 'Set untuk Tim Saya'.")
-print("Setiap tim memiliki titik terpisah. Gunakan tombol 'Tampilkan Data Teleport' untuk melihat data di console.")
-print("Gunakan tab Settings -> 'Cleanup / Uninject' untuk memulihkan keadaan semula dan menghentikan script.")
+print("✅ skrip1_final.lua loaded. Teleport: all team locations shown (Spawn only teleports to your team). Hitbox size fixed at 5 stud. Hotkey F6 toggles Hitbox. Aimbot has prediction.")
