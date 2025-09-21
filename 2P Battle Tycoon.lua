@@ -10,19 +10,26 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
---// UI LIBRARY
-local Players = game:GetService("Players")
+-- Pastikan game sudah load
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+-- Services
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local UIS         = game:GetService("UserInputService")
+local Workspace   = game:GetService("Workspace")
+
+-- Player
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "UIEditor"
-ScreenGui.Parent = game.CoreGui
+--------------------------------------------------------
+-- MULAI: Value Editor (tambahan baru)
+--------------------------------------------------------
 
--- 🔹 Fungsi Universal untuk bikin frame bisa digeser dengan TitleBar
+-- Utility: bikin frame draggable
 local function makeDraggable(frame, dragHandle)
-    local UIS = game:GetService("UserInputService")
     local dragging, dragInput, dragStart, startPos
-
     local function update(input)
         local delta = input.Position - dragStart
         frame.Position = UDim2.new(
@@ -32,11 +39,11 @@ local function makeDraggable(frame, dragHandle)
     end
 
     dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
+        if input.UserInputType == Enum.UserInputType.MouseButton1 
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging  = true
             dragStart = input.Position
-            startPos = frame.Position
-
+            startPos  = frame.Position
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
@@ -46,59 +53,103 @@ local function makeDraggable(frame, dragHandle)
     end)
 
     UIS.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        if dragging and (
+            input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch
+        ) then
             update(input)
         end
     end)
 end
 
---// UI VALUE EDITOR
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 300, 0, 400)
-MainFrame.Position = UDim2.new(0.05, 0, 0.2, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-MainFrame.BorderSizePixel = 0
-MainFrame.Parent = ScreenGui
+-- Buat GUI utama Value Editor
+local ValueEditorGui = Instance.new("ScreenGui")
+ValueEditorGui.Name = "ValueEditor_GUI"
+ValueEditorGui.ResetOnSpawn = false
+ValueEditorGui.Parent = PlayerGui
 
-local Title = Instance.new("TextLabel")
-Title.Text = "Value Editor"
-Title.Size = UDim2.new(1, 0, 0, 30)
-Title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 14
-Title.Parent = MainFrame
+local VE_MainFrame = Instance.new("Frame", ValueEditorGui)
+VE_MainFrame.Size = UDim2.new(0, 400, 0, 350)
+VE_MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
+VE_MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", VE_MainFrame).CornerRadius = UDim.new(0, 12)
 
-makeDraggable(MainFrame, Title)
+local VE_Title = Instance.new("TextLabel", VE_MainFrame)
+VE_Title.Size = UDim2.new(1, 0, 0, 40)
+VE_Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+VE_Title.Font = Enum.Font.GothamBold
+VE_Title.TextSize = 16
+VE_Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+VE_Title.Text = "🔧 Value Editor"
+Instance.new("UICorner", VE_Title).CornerRadius = UDim.new(0, 12)
 
---// UI PASSES EDITOR
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 250, 0, 350)
-Frame.Position = UDim2.new(0.5, -125, 0.2, 0)
-Frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Frame.BorderSizePixel = 0
-Frame.Visible = false
-Frame.Parent = ScreenGui
+makeDraggable(VE_MainFrame, VE_Title)
 
-local Title2 = Instance.new("TextLabel")
-Title2.Text = "Passes Editor"
-Title2.Size = UDim2.new(1, 0, 0, 30)
-Title2.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-Title2.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title2.Font = Enum.Font.GothamBold
-Title2.TextSize = 14
-Title2.Parent = Frame
+local VE_Content = Instance.new("ScrollingFrame", VE_MainFrame)
+VE_Content.Size = UDim2.new(1, -10, 1, -50)
+VE_Content.Position = UDim2.new(0, 5, 0, 45)
+VE_Content.BackgroundTransparency = 1
+VE_Content.CanvasSize = UDim2.new(0, 0, 0, 0)
+VE_Content.ScrollBarThickness = 6
 
-makeDraggable(Frame, Title2)
+local VE_Layout = Instance.new("UIListLayout", VE_Content)
+VE_Layout.Padding = UDim.new(0, 6)
+VE_Layout.SortOrder = Enum.SortOrder.LayoutOrder
 
---// Scroll Container for Passes
-local ScrollingFrame = Instance.new("ScrollingFrame")
-ScrollingFrame.Size = UDim2.new(1, 0, 1, -30)
-ScrollingFrame.Position = UDim2.new(0, 0, 0, 30)
-ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-ScrollingFrame.ScrollBarThickness = 6
-ScrollingFrame.BackgroundTransparency = 1
-ScrollingFrame.Parent = Frame
+-- Function bikin editor untuk satu value
+local function createValueEditor(parent, valueInst)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -8, 0, 40)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.35, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230, 230, 230)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Text = valueInst.Name
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.4, -12, 0, 28)
+    box.Position = UDim2.new(0.35, 0, 0.5, -14)
+    box.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+    box.TextColor3 = Color3.fromRGB(240, 240, 240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.Text = tostring(valueInst.Value)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
+
+    local applyBtn = Instance.new("TextButton", frame)
+    applyBtn.Size = UDim2.new(0.22, -8, 0, 28)
+    applyBtn.Position = UDim2.new(0.75, 0, 0.5, -14)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+    applyBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    applyBtn.Font = Enum.Font.GothamBold
+    applyBtn.TextSize = 13
+    applyBtn.Text = "Apply"
+    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 8)
+
+    applyBtn.MouseButton1Click:Connect(function()
+        local num = tonumber(box.Text)
+        if num ~= nil then
+            valueInst.Value = num
+        else
+            valueInst.Value = box.Text
+        end
+        box.Text = tostring(valueInst.Value)
+    end)
+end
+
+--------------------------------------------------------
+-- SELESAI: Value Editor (tambahan baru)
+--------------------------------------------------------
+
+-- Lanjutkan ke fitur lain (ESP, AutoFarm, dll) di bawah sini
+
 
 
 
