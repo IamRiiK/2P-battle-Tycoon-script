@@ -25,7 +25,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
 
 --------------------------------------------------------
--- VALUE EDITOR (gabungan: draggable + fungsi apply)
+-- VALUE EDITOR (gabungan: draggable + fitur apply)
 --------------------------------------------------------
 
 -- Utility: bikin frame draggable
@@ -84,11 +84,13 @@ VE_Title.Font = Enum.Font.GothamBold
 VE_Title.TextSize = 16
 VE_Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 VE_Title.Text = "🔧 Value Editor"
+VE_Title.TextXAlignment = Enum.TextXAlignment.Center
 Instance.new("UICorner", VE_Title).CornerRadius = UDim.new(0, 12)
 
 -- draggable pakai title
 makeDraggable(VE_MainFrame, VE_Title)
 
+-- Isi konten editor
 local VE_Content = Instance.new("ScrollingFrame", VE_MainFrame)
 VE_Content.Size = UDim2.new(1, -10, 1, -50)
 VE_Content.Position = UDim2.new(0, 5, 0, 45)
@@ -149,7 +151,7 @@ local function createValueEditor(parent, valueInst)
     end)
 end
 
--- (contoh penggunaan: isi dengan semua Value di Workspace)
+-- Auto scan semua Value (NumberValue, IntValue, StringValue) di Workspace
 for _, obj in pairs(Workspace:GetDescendants()) do
     if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
         createValueEditor(VE_Content, obj)
@@ -157,10 +159,11 @@ for _, obj in pairs(Workspace:GetDescendants()) do
 end
 
 --------------------------------------------------------
--- SELESAI: Value Editor
+-- END Value Editor gabungan
 --------------------------------------------------------
 
 -- lanjut fitur utama lain (ESP, AutoFarm, dll) di bawah sini
+
 
 
 
