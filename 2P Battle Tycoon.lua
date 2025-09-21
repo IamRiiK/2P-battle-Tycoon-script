@@ -1,70 +1,81 @@
+-- main_script_orion.lua
+-- Main Script Final (OrionLib)
+-- Features: ESP, AutoPressE, Walkspeed, Aimbot, Teleport (dropdown per team), Hitbox Expander
+-- Safe cleanup, rate limiting, tab UI via OrionLib
+-- Notes: executor must allow https requests (HttpGet) for OrionLib; if not, load will fail.
 
--- MAIN SCRIPT FINAL with Safe Cleanup
--- Features: ESP, AutoPressE, Walkspeed, AimBot, Teleport, Hitbox Expander
--- UI Tab System + Safe Cleanup + Rate Limiting included
-
--- Safe cleanup if already loaded
-if getgenv().MainScriptLoaded then
-    if type(getgenv().__MAIN_CLEANUP) == "function" then
-        pcall(getgenv().__MAIN_CLEANUP)
+-- Safe cleanup if re-run
+if getgenv().MAIN_SCRIPT_LOADED then
+    if type(getgenv().MAIN_SCRIPT_CLEANUP) == "function" then
+        pcall(getgenv().MAIN_SCRIPT_CLEANUP)
     end
 end
 
-getgenv().MainScriptLoaded = true
+getgenv().MAIN_SCRIPT_LOADED = true
 
--- SERVICES
+-- Services
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Keep track of resources for cleanup
-local _CONNS = {}
-local _THREADS = {}
-local _HIGHLIGHTS = {}
-local _ORIG_PART_SIZES = {}
-local _ORIG_WALKS = {}
+-- Resource tracking for safe cleanup
+local Connections = {}
+local Threads = {}
+local Highlights = {}
+local OrigPartSizes = {}
+local OrigWalkspeeds = {}
+local FeatureFlags = {
+    ESP = false,
+    AutoE = false,
+    Walk = false,
+    Aimbot = false,
+    Hitbox = false,
+}
 
-local function keepConn(c) if c and c.Disconnect then table.insert(_CONNS, c) end; return c end
-local function keepThread(t) if t then table.insert(_THREADS, t) end; return t end
+local function keepConn(conn)
+    if conn and conn.Disconnect then table.insert(Connections, conn) end
+    return conn
+end
 
--- Cleanup function (exposed to getgenv)
-getgenv().__MAIN_CLEANUP = function()
-    -- stop threads by flipping flags
-    pcall(function() getgenv()._FEATURES = nil end)
+local function keepThread(t)
+    if t then table.insert(Threads, t) end
+    return t
+end
+
+-- Cleanup function
+getgenv().MAIN_SCRIPT_CLEANUP = function()
+    -- disable features to let threads exit
+    FeatureFlags.ESP = false
+    FeatureFlags.AutoE = false
+    FeatureFlags.Walk = false
+    FeatureFlags.Aimbot = false
+    FeatureFlags.Hitbox = false
 
     -- disconnect connections
-    for _,c in ipairs(_CONNS) do
+    for _,c in ipairs(Connections) do
         pcall(function() c:Disconnect() end)
     end
-    _CONNS = {}
-
-    -- cancel threads (no direct cancel, rely on flags)
-    for _,th in ipairs(_THREADS) do
-        pcall(function() if type(th) == "thread" then -- nothing to do end end) end)
-    end
-    _THREADS = {}
+    Connections = {}
 
     -- destroy highlights
-    for _,hl in ipairs(_HIGHLIGHTS) do
+    for _,hl in ipairs(Highlights) do
         pcall(function() if hl and hl.Parent then hl:Destroy() end end)
     end
-    _HIGHLIGHTS = {}
+    Highlights = {}
 
-    -- restore parts sizes
-    for part, size in pairs(_ORIG_PART_SIZES) do
+    -- restore part sizes
+    for part, size in pairs(OrigPartSizes) do
         pcall(function()
-            if part and part.Parent then
-                part.Size = size
-            end
+            if part and part.Parent then part.Size = size end
         end)
     end
-    _ORIG_PART_SIZES = {}
+    OrigPartSizes = {}
 
-    -- restore walks
-    for char, ws in pairs(_ORIG_WALKS) do
+    -- restore walkspeeds
+    for char, ws in pairs(OrigWalkspeeds) do
         pcall(function()
             if char and char.Parent then
                 local hum = char:FindFirstChildOfClass("Humanoid")
@@ -72,319 +83,229 @@ getgenv().__MAIN_CLEANUP = function()
             end
         end)
     end
-    _ORIG_WALKS = {}
+    OrigWalkspeeds = {}
 
     -- remove GUI
     pcall(function()
-        local g = game:GetService("CoreGui"):FindFirstChild("MainScriptUI")
-        if g then g:Destroy() end
+        local gui = game:GetService("CoreGui"):FindFirstChild("MainScriptUI_Orion")
+        if gui then gui:Destroy() end
     end)
 
-    getgenv().MainScriptLoaded = false
-    getgenv().__MAIN_CLEANUP = nil
-    print("[MainScript] cleanup finished")
+    getgenv().MAIN_SCRIPT_LOADED = false
+    getgenv().MAIN_SCRIPT_CLEANUP = nil
+    print("[MainScript] Cleanup complete")
 end
 
--- FEATURES table (global so threads can check it)
-getgenv()._FEATURES = {
-    ESP = false,
-    AutoE = false,
-    Walk = false,
-    WalkValue = 16,
-    Aimbot = false,
-    Hitbox = false,
-}
+-- Attempt to load OrionLib
+local OrionLib = nil
+local ok, res = pcall(function()
+    return loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Orion/main/source'))()
+end)
 
--- UI BUILD
-local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
-ScreenGui.Name = "MainScriptUI"
-
-local MainFrame = Instance.new("Frame", ScreenGui)
-MainFrame.Size = UDim2.new(0, 520, 0, 380)
-MainFrame.Position = UDim2.new(0.2, 0, 0.2, 0)
-MainFrame.BackgroundColor3 = Color3.fromRGB(25,25,25)
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,8)
-
-local Title = Instance.new("TextLabel", MainFrame)
-Title.Size = UDim2.new(1,0,0,36)
-Title.Position = UDim2.new(0,0,0,0)
-Title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-Title.Text = "Main Script Final"
-Title.TextColor3 = Color3.fromRGB(255,255,255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
-
-local TabBar = Instance.new("Frame", MainFrame)
-TabBar.Size = UDim2.new(0,140,1,-46)
-TabBar.Position = UDim2.new(0,0,0,40)
-TabBar.BackgroundColor3 = Color3.fromRGB(35,35,35)
-
-local Content = Instance.new("Frame", MainFrame)
-Content.Size = UDim2.new(1,-150,1,-56)
-Content.Position = UDim2.new(0,150,0,48)
-Content.BackgroundTransparency = 1
-
-local Tabs = {}
-local TabContents = {}
-
-local function createTab(name)
-    local btn = Instance.new("TextButton", TabBar)
-    btn.Size = UDim2.new(1,-10,0,32)
-    btn.Position = UDim2.new(0,5,0,#TabBar:GetChildren()*0)
-    btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-    btn.Text = name
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-
-    local frame = Instance.new("ScrollingFrame", Content)
-    frame.Size = UDim2.new(1,-10,1,-10)
-    frame.Position = UDim2.new(0,5,0,5)
-    frame.BackgroundTransparency = 1
-    frame.Visible = false
-    local layout = Instance.new("UIListLayout", frame)
-    layout.Padding = UDim.new(0,6)
-
-    btn.MouseButton1Click:Connect(function()
-        for k,v in pairs(TabContents) do v.Visible = (k==name) end
-    end)
-
-    Tabs[name] = btn
-    TabContents[name] = frame
-    return frame
+if ok and type(res) == "table" then
+    OrionLib = res
+else
+    warn("Failed to load OrionLib. Ensure your executor supports HttpGet and the URL is reachable.")
+    -- fallback: create very basic GUI if Orion not available
 end
 
-local ESPTab = createTab("ESP")
-local CombatTab = createTab("Combat")
-local MoveTab = createTab("Movement")
-local TeleTab = createTab("Teleport")
-
--- Default open ESP
-TabContents["ESP"].Visible = true
-
--- Helper add UI
-local function addToggle(parent, text, initial, callback)
-    local frame = Instance.new("Frame", parent)
-    frame.Size = UDim2.new(1,0,0,36)
-    frame.BackgroundTransparency = 1
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.65,0,1,0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 14
-    label.TextColor3 = Color3.fromRGB(230,230,230)
-
-    local btn = Instance.new("TextButton", frame)
-    btn.Size = UDim2.new(0.33, -6,0,28)
-    btn.Position = UDim2.new(0.67, 6,0.5,-14)
-    btn.Text = initial and "ON" or "OFF"
-    btn.BackgroundColor3 = initial and Color3.fromRGB(80,150,220) or Color3.fromRGB(50,50,50)
-    btn.Font = Enum.Font.Gotham
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-
-    btn.MouseButton1Click:Connect(function()
-        local new = not initial
-        initial = new
-        btn.Text = new and "ON" or "OFF"
-        btn.BackgroundColor3 = new and Color3.fromRGB(80,150,220) or Color3.fromRGB(50,50,50)
-        pcall(callback, new)
-    end)
-    return frame, btn
+-- Create window (Orion) or fallback GUI
+local Window, ESPTab, CombatTab, MoveTab, TeleTab
+if OrionLib then
+    Window = OrionLib:MakeWindow({Name = "Main Script Final", HidePremium = true, SaveConfig = true, ConfigFolder = "MainScriptOrion"})
+    ESPTab = Window:MakeTab({Name = "ESP", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+    CombatTab = Window:MakeTab({Name = "Combat", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+    MoveTab = Window:MakeTab({Name = "Movement", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+    TeleTab = Window:MakeTab({Name = "Teleport", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+else
+    -- create minimal screen gui fallback to avoid total failure
+    local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui"))
+    ScreenGui.Name = "MainScriptUI_Orion"
+    local Frame = Instance.new("Frame", ScreenGui)
+    Frame.Size = UDim2.new(0,420,0,300)
+    Frame.Position = UDim2.new(0.2,0,0.2,0)
+    Frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0,8)
+    local Title = Instance.new("TextLabel", Frame)
+    Title.Size = UDim2.new(1,0,0,36); Title.BackgroundTransparency = 1
+    Title.Text = "Main Script (Fallback UI)" Title.Font = Enum.Font.GothamBold; Title.TextColor3 = Color3.new(1,1,1)
+    -- create containers for manual building if necessary (not implementing full fallback controls)
+    warn("Orion unavailable: UI disabled. Use executor with HTTP support to get full UI.")
 end
 
-local function addTextBox(parent, placeholder, default, onEnter)
-    local box = Instance.new("TextBox", parent)
-    box.Size = UDim2.new(1,0,0,28)
-    box.PlaceholderText = placeholder
-    box.Text = default or ""
-    box.ClearTextOnFocus = false
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 13
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
-    box.FocusLost:Connect(function(enter)
-        if enter then pcall(onEnter, box.Text) end
-    end)
-    return box
-end
-
--- === ESP implementation ===
-local highlights = {}
-
-local function createHighlightForPlayer(p)
+-- Helper: create highlight for player
+local function spawnHighlight(p)
     if not p or not p.Character then return end
-    if highlights[p] then return end
+    if Highlights[p] then return end
     local ok, hl = pcall(function()
         local h = Instance.new("Highlight")
         h.Adornee = p.Character
-        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         h.FillTransparency = 0.7
-        h.FillColor = (p.Team and LocalPlayer.Team and p.Team==LocalPlayer.Team) and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,40,40)
         h.OutlineTransparency = 0
+        h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        h.FillColor = (p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team) and Color3.fromRGB(0,200,0) or Color3.fromRGB(200,40,40)
         h.Parent = p.Character
         return h
     end)
-    if ok and hl then highlights[p] = hl; table.insert(_HIGHLIGHTS, hl) end
+    if ok and hl then
+        Highlights[p] = hl
+        table.insert(Connections, p.CharacterRemoving:Connect(function() pcall(function() if hl and hl.Parent then hl:Destroy() end end) end))
+    end
 end
 
-local function clearHighlights()
-    for p,hl in pairs(highlights) do
-        pcall(function() if hl and hl.Parent then hl:Destroy() end end)
-    end
-    highlights = {}
-    _HIGHLIGHTS = {}
-end
-
--- ESP toggle UI
-addToggle(ESPTab, "ESP", false, function(state)
-    getgenv()._FEATURES.ESP = state
-    if state then
-        -- create for current players
-        for _,plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                createHighlightForPlayer(plr)
-            end
-        end
-    else
-        clearHighlights()
-    end
-end)
-
--- ensure highlights follow new players/characters
-keepConn(Players.PlayerAdded:Connect(function(p)
-    if getgenv()._FEATURES.ESP and p ~= LocalPlayer then
-        p.CharacterAdded:Connect(function() createHighlightForPlayer(p) end)
-    end
-end))
-
--- === Hitbox Expander ===
-local currentScale = 1.5
-addToggle(CombatTab, "Hitbox Expander", false, function(state)
-    getgenv()._FEATURES.Hitbox = state
-    if state then
-        for _,p in ipairs(Players:GetPlayers()) do
-            if p~=LocalPlayer and p.Character then
-                for _,part in ipairs(p.Character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if not _ORIG_PART_SIZES[part] then _ORIG_PART_SIZES[part] = part.Size end
-                        pcall(function() part.Size = _ORIG_PART_SIZES[part] * currentScale end)
-                    end
+-- ESP functionality via Orion UI
+if OrionLib then
+    ESPTab:AddToggle({
+        Name = "Enable ESP",
+        Default = false,
+        Callback = function(val)
+            FeatureFlags.ESP = val
+            if not val then
+                -- clear
+                for _,h in ipairs(Highlights) do pcall(function() if h and h.Parent then h:Destroy() end end) end
+                Highlights = {}
+            else
+                -- create for existing players
+                for _,plr in ipairs(Players:GetPlayers()) do
+                    if plr ~= LocalPlayer then spawnHighlight(plr) end
                 end
             end
         end
-    else
-        for part,sz in pairs(_ORIG_PART_SIZES) do
-            pcall(function() if part and part.Parent then part.Size = sz end end)
+    })
+    -- Option: team color toggle
+    local teamColor = true
+    ESPTab:AddToggle({Name = "Color by Team", Default = true, Callback = function(v) teamColor = v end})
+    -- Keep highlights updated when players/characters spawn
+    keepConn(Players.PlayerAdded:Connect(function(p)
+        if FeatureFlags.ESP and p ~= LocalPlayer then
+            keepConn(p.CharacterAdded:Connect(function() spawnHighlight(p) end))
         end
-        _ORIG_PART_SIZES = {}
+    end))
+end
+
+-- Hitbox Expander
+local hitboxScale = 1.8
+local function setHitboxForCharacter(char, scale)
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            if not OrigPartSizes[part] then OrigPartSizes[part] = part.Size end
+            pcall(function() part.Size = OrigPartSizes[part] * scale end)
+        end
     end
-end)
+end
 
-local scaleBox = addTextBox(CombatTab, "Hitbox scale (1.0 - 5.0)", tostring(currentScale), function(txt)
-    local n = tonumber(txt)
-    if n and n>=1 and n<=5 then currentScale = n end
-end)
+if OrionLib then
+    CombatTab:AddToggle({Name = "Hitbox Expander", Default = false, Callback = function(val)
+        FeatureFlags.Hitbox = val
+        if val then
+            for _,p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character then setHitboxForCharacter(p.Character, hitboxScale) end
+            end
+        else
+            for part, sz in pairs(OrigPartSizes) do
+                pcall(function() if part and part.Parent then part.Size = sz end end)
+            end
+            OrigPartSizes = {}
+        end
+    end})
 
--- apply on character join
-keepConn(Players.PlayerAdded:Connect(function(p)
-    if p~=LocalPlayer then
-        p.CharacterAdded:Connect(function(char)
-            if getgenv()._FEATURES.Hitbox then
-                task.wait(0.05)
-                for _,part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        if not _ORIG_PART_SIZES[part] then _ORIG_PART_SIZES[part] = part.Size end
-                        pcall(function() part.Size = _ORIG_PART_SIZES[part] * currentScale end)
-                    end
+    CombatTab:AddTextbox({Name = "Scale (1.0 - 5.0)", Default = tostring(hitboxScale), Placeholder = "1.0-5.0", Callback = function(txt)
+        local n = tonumber(txt)
+        if n and n >= 1 and n <= 5 then hitboxScale = n end
+    end})
+
+    -- Apply to characters that spawn later
+    keepConn(Players.PlayerAdded:Connect(function(p)
+        if p ~= LocalPlayer then
+            keepConn(p.CharacterAdded:Connect(function(char)
+                if FeatureFlags.Hitbox then
+                    task.wait(0.05)
+                    setHitboxForCharacter(char, hitboxScale)
+                end
+            end))
+        end
+    end))
+end
+
+-- Walkspeed & Auto Press E
+local defaultWalk = 16
+if OrionLib then
+    MoveTab:AddTextbox({Name = "WalkSpeed Value", Default = tostring(defaultWalk), Placeholder = "16-200", Callback = function(txt)
+        local n = tonumber(txt)
+        if n and n >= 16 and n <= 200 then defaultWalk = n end
+    end})
+    MoveTab:AddToggle({Name = "Enable WalkSpeed", Default = false, Callback = function(val)
+        FeatureFlags.Walk = val
+        if val then
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    if not OrigWalkspeeds[char] then OrigWalkspeeds[char] = hum.WalkSpeed end
+                    pcall(function() hum.WalkSpeed = defaultWalk end)
                 end
             end
-        end)
-    end
-end))
-
--- === Walkspeed ===
-addToggle(MoveTab, "WalkSpeed", false, function(state)
-    getgenv()._FEATURES.Walk = state
-    if state then
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                if not _ORIG_WALKS[char] then _ORIG_WALKS[char] = hum.WalkSpeed end
-                hum.WalkSpeed = tonumber(getgenv()._FEATURES.WalkValue) or 16
+        else
+            for c, ws in pairs(OrigWalkspeeds) do
+                pcall(function() if c and c.Parent then local h = c:FindFirstChildOfClass("Humanoid"); if h and ws then h.WalkSpeed = ws end end end)
             end
+            OrigWalkspeeds = {}
         end
-    else
-        for c,ws in pairs(_ORIG_WALKS) do
-            pcall(function() if c and c.Parent then local h = c:FindFirstChildOfClass("Humanoid"); if h and ws then h.WalkSpeed = ws end end end)
+    end})
+
+    MoveTab:AddToggle({Name = "Auto Press E", Default = false, Callback = function(val)
+        FeatureFlags.AutoE = val
+        if val then
+            keepThread(task.spawn(function()
+                local success, VIM = pcall(function() return game:GetService("VirtualInputManager") end)
+                if not success or not VIM then
+                    warn("VirtualInputManager unavailable. AutoE disabled.")
+                    FeatureFlags.AutoE = false
+                    return
+                end
+                while FeatureFlags.AutoE do
+                    pcall(function()
+                        VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    end)
+                    task.wait(0.5)
+                end
+            end))
         end
-        _ORIG_WALKS = {}
-    end
-end)
+    end})
+end
 
-local wsBox = addTextBox(MoveTab, "WalkSpeed value (16-200)", tostring(getgenv()._FEATURES.WalkValue), function(txt)
-    local n = tonumber(txt)
-    if n and n>=16 and n<=200 then getgenv()._FEATURES.WalkValue = n end
-end)
+-- Aimbot (basic)
+FeatureFlags.AIM_FOV = 8
+FeatureFlags.AIM_LERP = 0.4
+FeatureFlags.AIM_HOLD = false
 
--- Auto Press E
-addToggle(MoveTab, "Auto Press E", false, function(state)
-    getgenv()._FEATURES.AutoE = state
-    if getgenv()._FEATURES.AutoE then
-        keepThread(task.spawn(function()
-            while getgenv()._FEATURES.AutoE do
-                pcall(function()
-                    local vim = pcall(function() return game:GetService("VirtualInputManager") end)
-                    if vim then
-                        pcall(function()
-                            local VIM = game:GetService("VirtualInputManager")
-                            VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                            VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                        end)
-                    end
-                end)
-                task.wait(tonumber(getgenv()._FEATURES.AutoEInterval) or 0.5)
-            end
-        end))
-    end
-end)
+if OrionLib then
+    CombatTab:AddToggle({Name = "Aimbot", Default = false, Callback = function(v) FeatureFlags.Aimbot = v end})
+    CombatTab:AddTextbox({Name = "AIM FOV (deg)", Default = tostring(FeatureFlags.AIM_FOV), Placeholder = "1-180", Callback = function(txt) local n = tonumber(txt); if n and n>0 and n<=180 then FeatureFlags.AIM_FOV = n end end})
+    CombatTab:AddTextbox({Name = "AIM LERP (0.01-0.95)", Default = tostring(FeatureFlags.AIM_LERP), Placeholder = "0.01-0.95", Callback = function(txt) local n = tonumber(txt); if n then FeatureFlags.AIM_LERP = math.clamp(n,0.01,0.95) end end})
+    CombatTab:AddToggle({Name = "Hold Right Mouse to Aim", Default = false, Callback = function(v) FeatureFlags.AIM_HOLD = v end})
+end
 
--- default interval
-getgenv()._FEATURES.AutoEInterval = 0.5
-
--- === Aimbot (basic) ===
-getgenv()._FEATURES.Aimbot = false
-getgenv()._FEATURES.AIM_FOV = 8
-getgenv()._FEATURES.AIM_LERP = 0.4
-
-addToggle(CombatTab, "Aimbot", false, function(state)
-    getgenv()._FEATURES.Aimbot = state
-end)
-
-local fovBox = addTextBox(CombatTab, "AIM FOV (deg)", tostring(getgenv()._FEATURES.AIM_FOV), function(txt)
-    local n = tonumber(txt)
-    if n and n>0 and n<=180 then getgenv()._FEATURES.AIM_FOV = n end
-end)
-
--- Aimbot loop (RenderStepped)
+-- Aimbot loop
 keepConn(RunService.RenderStepped:Connect(function()
-    if not getgenv()._FEATURES.Aimbot then return end
+    if not FeatureFlags.Aimbot then return end
+    if FeatureFlags.AIM_HOLD and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
     if UserInputService:GetFocusedTextBox() then return end
     if not Workspace.CurrentCamera then return end
 
     local cam = Workspace.CurrentCamera
     local best, bestAng = nil, 1e9
     for _,p in ipairs(Players:GetPlayers()) do
-        if p~=LocalPlayer and p.Character and p.Character.Parent then
+        if p ~= LocalPlayer and p.Character and p.Character.Parent then
             local hum = p.Character:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health>0 then
-                local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
-                if head then
-                    local dir = head.Position - cam.CFrame.Position
-                    local ang = math.deg(math.acos(math.clamp((cam.CFrame.LookVector:Dot(dir.Unit))/(cam.CFrame.LookVector.Magnitude*dir.Unit.Magnitude), -1, 1)))
-                    if ang < bestAng and ang <= getgenv()._FEATURES.AIM_FOV then
-                        bestAng = ang; best = head
+            if hum and hum.Health > 0 then
+                local part = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
+                if part then
+                    local dir = part.Position - cam.CFrame.Position
+                    if dir.Magnitude > 0.001 then
+                        local ang = math.deg(math.acos(math.clamp((cam.CFrame.LookVector:Dot(dir.Unit))/(cam.CFrame.LookVector.Magnitude*dir.Unit.Magnitude), -1, 1)))
+                        if ang < bestAng and ang <= FeatureFlags.AIM_FOV then bestAng = ang; best = part end
                     end
                 end
             end
@@ -394,17 +315,17 @@ keepConn(RunService.RenderStepped:Connect(function()
     if best then
         pcall(function()
             local dir = (best.Position - cam.CFrame.Position).Unit
-            local cur = cam.CFrame.LookVector
-            local lerp = math.clamp(getgenv()._FEATURES.AIM_LERP, 0.01, 0.95)
-            local blended = cur:Lerp(dir, lerp)
+            local currentLook = cam.CFrame.LookVector
+            local lerpVal = math.clamp(FeatureFlags.AIM_LERP, 0.01, 0.95)
+            local blended = currentLook:Lerp(dir, lerpVal)
             local pos = cam.CFrame.Position
             local target = CFrame.new(pos, pos + blended)
-            cam.CFrame = cam.CFrame:Lerp(target, lerp)
+            cam.CFrame = cam.CFrame:Lerp(target, lerpVal)
         end)
     end
 end))
 
--- === TELEPORT Tab (dropdown per team) ===
+-- Teleport points (from your provided table)
 local TeleportPoints = {
     ["Black"] = {
         Spaceship = Vector3.new(153.2, 683.7, 814.4),
@@ -467,105 +388,63 @@ local TeleportPoints = {
     }
 }
 
-local function createTeleportDropdown(parent)
-    local label = Instance.new("TextLabel", parent)
-    label.Size = UDim2.new(1,0,0,20)
-    label.BackgroundTransparency = 1
-    label.Text = "Teleport"
-    label.Font = Enum.Font.Gotham
-    label.TextColor3 = Color3.fromRGB(230,230,230)
-
-    local sc = Instance.new("ScrollingFrame", parent)
-    sc.Size = UDim2.new(1,0,0,220)
-    sc.Position = UDim2.new(0,0,0,24)
-    sc.BackgroundTransparency = 1
-    sc.ScrollBarThickness = 6
-    Instance.new("UIListLayout", sc).Padding = UDim.new(0,6)
-
-    local myTeam = LocalPlayer.Team and LocalPlayer.Team.Name or nil
-
-    for team, locs in pairs(TeleportPoints) do
-        if team == "Flag" then
-            for locName, pos in pairs(locs) do
-                local btn = Instance.new("TextButton", sc)
-                btn.Size = UDim2.new(1,-8,0,28)
-                btn.Text = "Flag - "..locName
-                btn.Font = Enum.Font.Gotham
-                btn.TextColor3 = Color3.fromRGB(255,255,255)
-                btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
-                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-                btn.MouseButton1Click:Connect(function()
-                    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-                    end
-                end)
-            end
-        else
-            local header = Instance.new("TextButton", sc)
-            header.Size = UDim2.new(1,-8,0,30)
-            header.Text = team.." ▼"
-            header.Font = Enum.Font.GothamBold
-            header.TextColor3 = Color3.fromRGB(255,255,255)
-            header.BackgroundColor3 = Color3.fromRGB(45,45,45)
-            Instance.new("UICorner", header).CornerRadius = UDim.new(0,6)
-
-            local content = Instance.new("Frame", sc)
-            content.Size = UDim2.new(1,-16,0,0)
-            content.Position = UDim2.new(0,8,0,34)
-            content.BackgroundTransparency = 1
-            content.Visible = false
-            local l = Instance.new("UIListLayout", content)
-            l.Padding = UDim.new(0,4)
-
-            header.MouseButton1Click:Connect(function()
-                content.Visible = not content.Visible
-            end)
-
-            for locName, pos in pairs(locs) do
-                if locName == "Spawn" then
-                    if myTeam == team then
-                        local b = Instance.new("TextButton", content)
-                        b.Size = UDim2.new(1,-6,0,28)
-                        b.Text = locName
-                        b.Font = Enum.Font.Gotham
-                        b.TextColor3 = Color3.fromRGB(255,255,255)
-                        b.BackgroundColor3 = Color3.fromRGB(70,70,70)
-                        Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-                        b.MouseButton1Click:Connect(function()
-                            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                                LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-                            end
-                        end)
-                    end
-                else
-                    local b = Instance.new("TextButton", content)
-                    b.Size = UDim2.new(1,-6,0,28)
-                    b.Text = locName
-                    b.Font = Enum.Font.Gotham
-                    b.TextColor3 = Color3.fromRGB(255,255,255)
-                    b.BackgroundColor3 = Color3.fromRGB(70,70,70)
-                    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-                    b.MouseButton1Click:Connect(function()
-                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0,3,0))
-                        end
-                    end)
-                end
+-- Teleport UI (dropdown per team) using OrionTab helpers
+if OrionLib then
+    -- Team dropdown
+    local teamSelection = "Flag"
+    TeleTab:AddDropdown({Name = "Team", Default = "Flag", Options = {"Black","White","Purple","Orange","Yellow","Blue","Green","Red","Flag"}, Callback = function(val)
+        teamSelection = val
+        -- Build location options
+        local locs = TeleportPoints[val] or {}
+        local opts = {}
+        for name,_ in pairs(locs) do
+            if name == "Spawn" then
+                if LocalPlayer.Team and LocalPlayer.Team.Name == val then table.insert(opts, name) end
+            else
+                table.insert(opts, name)
             end
         end
-    end
+        -- ensure at least one option
+        if #opts == 0 then opts = {"None"} end
+
+        -- add/update location dropdown
+        TeleTab:Refresh()
+        TeleTab:AddDropdown({Name = "Location", Default = opts[1], Options = opts, Callback = function(location)
+            local locTable = TeleportPoints[teamSelection]
+            if locTable and locTable[location] then
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(locTable[location] + Vector3.new(0,3,0))
+                end
+            end
+        end})
+    end})
+
+    -- quick teleport to your own spawn
+    TeleTab:AddButton({Name = "Teleport to My Spawn", Callback = function()
+        local myTeam = LocalPlayer.Team and LocalPlayer.Team.Name or nil
+        if not myTeam or not TeleportPoints[myTeam] or not TeleportPoints[myTeam].Spawn then OrionLib:MakeNotification({Name="Teleport",Content="Spawn coord not available for your team.",Duration=3}) return end
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(TeleportPoints[myTeam].Spawn + Vector3.new(0,3,0))
+        end
+    end})
+
+    TeleTab:AddButton({Name = "Teleport to Flag", Callback = function()
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(TeleportPoints.Flag.Neutral + Vector3.new(0,3,0)) end
+    end})
+
+    -- refresh on team change
+    keepConn(LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function() TeleTab:Refresh() end))
 end
 
-createTeleportDropdown(TeleTab)
+-- Keybinds (optional): F1 toggle Orion window visibility (if Orion loaded)
+if OrionLib then
+    keepConn(UserInputService.InputBegan:Connect(function(input, gp)
+        if gp then return end
+        if input.KeyCode == Enum.KeyCode.F1 then
+            pcall(function() Window:Toggle() end)
+        end
+    end))
+end
 
--- Refresh teleport menu on team change
-keepConn(LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function() 
-    -- rebuild TeleTab content: destroy children then recreate
-    for _,c in ipairs(TeleTab:GetChildren()) do
-        if not c:IsA("UIListLayout") then pcall(function() c:Destroy() end) end
-    end
-    createTeleportDropdown(TeleTab)
-end))
-
--- Final notes
-print("[MainScript] Loaded. Use getgenv().__MAIN_CLEANUP() to cleanup manually or re-run script to auto-clean.") 
+-- Final print
+print("[MainScript] Loaded. Call getgenv().MAIN_SCRIPT_CLEANUP() to cleanup.")
