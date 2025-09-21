@@ -1,10 +1,10 @@
-
 -- skrip1_final.lua
 -- Final patched skrip1:
 -- 1) Passes Editor & Value Editor removed
 -- 2) Teleport (all team locations visible; Spawn only teleports to your team)
 -- 3) Hitbox Expander (entire body, fixed size 5 studs) + hotkey F6
--- 4) Aimbot upgraded with linear velocity prediction--
+-- 4) Aimbot upgraded with linear velocity prediction
+
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
