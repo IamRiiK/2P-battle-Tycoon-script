@@ -6,169 +6,10 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
-
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
-
--- Pastikan game sudah load
-if not game:IsLoaded() then game.Loaded:Wait() end
-
--- Services
-local Players     = game:GetService("Players")
-local RunService  = game:GetService("RunService")
-local UIS         = game:GetService("UserInputService")
-local Workspace   = game:GetService("Workspace")
-
--- Player
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-
---------------------------------------------------------
--- VALUE EDITOR FINAL (UI pertama + fungsi UI kedua)
---------------------------------------------------------
-
--- Utility: bikin frame draggable
-local function makeDraggable(frame, dragHandle)
-    local dragging, dragStart, startPos
-
-    local function update(input)
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end
-
-    dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging  = true
-            dragStart = input.Position
-            startPos  = frame.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-
-    UIS.InputChanged:Connect(function(input)
-        if dragging and (
-            input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch
-        ) then
-            update(input)
-        end
-    end)
-end
-
--- Buat GUI utama (UI pertama)
-local ValueEditorGui = Instance.new("ScreenGui")
-ValueEditorGui.Name = "ValueEditor_GUI"
-ValueEditorGui.ResetOnSpawn = false
-ValueEditorGui.Parent = PlayerGui
-
-local VE_MainFrame = Instance.new("Frame", ValueEditorGui)
-VE_MainFrame.Size = UDim2.new(0, 400, 0, 350)
-VE_MainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
-VE_MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-Instance.new("UICorner", VE_MainFrame).CornerRadius = UDim.new(0, 12)
-
-local VE_Title = Instance.new("TextLabel", VE_MainFrame)
-VE_Title.Size = UDim2.new(1, 0, 0, 40)
-VE_Title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-VE_Title.Font = Enum.Font.GothamBold
-VE_Title.TextSize = 16
-VE_Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-VE_Title.Text = "🔧 Value Editor"
-VE_Title.TextXAlignment = Enum.TextXAlignment.Center
-Instance.new("UICorner", VE_Title).CornerRadius = UDim.new(0, 12)
-
--- draggable pakai title
-makeDraggable(VE_MainFrame, VE_Title)
-
--- Kontainer isi editor
-local VE_Content = Instance.new("ScrollingFrame", VE_MainFrame)
-VE_Content.Size = UDim2.new(1, -10, 1, -50)
-VE_Content.Position = UDim2.new(0, 5, 0, 45)
-VE_Content.BackgroundTransparency = 1
-VE_Content.CanvasSize = UDim2.new(0, 0, 0, 0)
-VE_Content.ScrollBarThickness = 6
-
-local VE_Layout = Instance.new("UIListLayout", VE_Content)
-VE_Layout.Padding = UDim.new(0, 6)
-VE_Layout.SortOrder = Enum.SortOrder.LayoutOrder
-
--- Fungsi editor dari UI kedua (dipindahkan ke sini)
-local function createValueEditor(parent, valueInst)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, -8, 0, 40)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
-
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.35, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 13
-    label.TextColor3 = Color3.fromRGB(230, 230, 230)
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Text = valueInst.Name
-
-    local box = Instance.new("TextBox", frame)
-    box.Size = UDim2.new(0.4, -12, 0, 28)
-    box.Position = UDim2.new(0.35, 0, 0.5, -14)
-    box.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
-    box.TextColor3 = Color3.fromRGB(240, 240, 240)
-    box.Font = Enum.Font.Gotham
-    box.TextSize = 13
-    box.ClearTextOnFocus = false
-    box.Text = tostring(valueInst.Value)
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 8)
-
-    local applyBtn = Instance.new("TextButton", frame)
-    applyBtn.Size = UDim2.new(0.22, -8, 0, 28)
-    applyBtn.Position = UDim2.new(0.75, 0, 0.5, -14)
-    applyBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
-    applyBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
-    applyBtn.Font = Enum.Font.GothamBold
-    applyBtn.TextSize = 13
-    applyBtn.Text = "Apply"
-    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0, 8)
-
-    -- apply perubahan value
-    applyBtn.MouseButton1Click:Connect(function()
-        local num = tonumber(box.Text)
-        if num ~= nil then
-            valueInst.Value = num
-        else
-            valueInst.Value = box.Text
-        end
-        box.Text = tostring(valueInst.Value)
-    end)
-end
-
--- Loop: tambahkan semua Value dari Workspace
-for _, obj in pairs(Workspace:GetDescendants()) do
-    if obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
-        createValueEditor(VE_Content, obj)
-    end
-end
-
---------------------------------------------------------
--- END Value Editor final (UI kedua sudah dihapus)
---------------------------------------------------------
-
--- lanjut fitur lain (ESP, AutoFarm, dll)
-
-
-
-
-
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
+
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
     Camera = ok and cam or Workspace.CurrentCamera
@@ -1059,6 +900,43 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "ValueEditor_GUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
+
+local function makeDraggable(frame, dragHandle)
+    local dragging, dragStart, startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+
+    dragHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging  = true
+            dragStart = input.Position
+            startPos  = frame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if dragging and (
+            input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch
+        ) then
+            update(input)
+        end
+    end)
+end
+
 
 -- Frame utama
 local MainFrame = Instance.new("Frame", ScreenGui)
