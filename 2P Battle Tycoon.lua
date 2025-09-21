@@ -986,5 +986,183 @@ end
 -- panggil editor
 createCurrencyEditor()
 
+-- [ EXTRA: EDIT OTHER STATS / REBIRTH POINTS ]
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- tunggu sampai stats muncul (aman)
+local function waitForStats(timeout)
+    timeout = timeout or 15
+    local stats = nil
+    local elapsed = 0
+    while elapsed < timeout do
+        stats = LocalPlayer:FindFirstChild("leaderstats")
+            or LocalPlayer:FindFirstChild("DataFolder")
+            or LocalPlayer:FindFirstChild("Stats")
+        if stats then return stats end
+        task.wait(0.5)
+        elapsed = elapsed + 0.5
+    end
+    return nil
+end
+
+-- daftar kata kunci untuk mencari value non-cash yang relevan
+local KEYWORDS = {
+    "point", "points", "perk", "rebirth", "prestige", "token", "rank", "level"
+}
+
+local function nameMatchesKeyword(name)
+    local lname = tostring(name):lower()
+    for _,k in ipairs(KEYWORDS) do
+        if lname:match(k) then return true end
+    end
+    return false
+end
+
+-- helper untuk mencari remotes dengan nama mirip
+local REMOTE_CANDIDATES = {
+    "AddPoint", "GivePoint", "Redeem", "Rebirth", "ClaimRebirth", "Collect", "AddCurrency",
+    "UpdatePoints", "AddTokens", "GrantPoints"
+}
+
+local function findRemoteByNames()
+    local found = {}
+    -- cari di ReplicatedStorage dan descendants
+    for _, inst in ipairs(ReplicatedStorage:GetDescendants()) do
+        if inst:IsA("RemoteEvent") or inst:IsA("RemoteFunction") then
+            local iname = inst.Name:lower()
+            for _,c in ipairs(REMOTE_CANDIDATES) do
+                if iname:match(c:lower()) then
+                    table.insert(found, inst)
+                    break
+                end
+            end
+        end
+    end
+    return found
+end
+
+-- buat baris editor generic seperti sebelumnya
+local function createGenericRow(parent, valueInst)
+    local frame = Instance.new("Frame", parent)
+    frame.Size = UDim2.new(1,0,0,40)
+    frame.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.38,-8,1,0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 13
+    label.TextColor3 = Color3.fromRGB(230,230,230)
+    label.Text = valueInst.Name
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0.4,-12,0,28)
+    box.Position = UDim2.new(0.38,0,0.5,-14)
+    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.TextColor3 = Color3.fromRGB(240,240,240)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 13
+    box.ClearTextOnFocus = false
+    box.Text = tostring(valueInst.Value)
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+
+    local applyBtn = Instance.new("TextButton", frame)
+    applyBtn.Size = UDim2.new(0.22,-8,0,28)
+    applyBtn.Position = UDim2.new(0.78,0,0.5,-14)
+    applyBtn.BackgroundColor3 = Color3.fromRGB(50,100,180)
+    applyBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    applyBtn.Font = Enum.Font.GothamBold
+    applyBtn.TextSize = 13
+    applyBtn.Text = "Apply"
+    Instance.new("UICorner", applyBtn).CornerRadius = UDim.new(0,8)
+
+    -- optional: button to try remote call found
+    local remoteBtn = Instance.new("TextButton", frame)
+    remoteBtn.Size = UDim2.new(0.18,-8,0,20)
+    remoteBtn.Position = UDim2.new(0.78,0,0,4)
+    remoteBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+    remoteBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    remoteBtn.Font = Enum.Font.Gotham
+    remoteBtn.TextSize = 12
+    remoteBtn.Text = "Try Remote"
+    Instance.new("UICorner", remoteBtn).CornerRadius = UDim.new(0,6)
+
+    -- apply local change (may be overwritten by server)
+    applyBtn.MouseButton1Click:Connect(function()
+        local n = tonumber(box.Text)
+        if n and (valueInst:IsA("IntValue") or valueInst:IsA("NumberValue")) then
+            pcall(function() valueInst.Value = n end)
+            box.Text = tostring(valueInst.Value)
+        else
+            box.Text = tostring(valueInst.Value)
+        end
+    end)
+
+    valueInst:GetPropertyChangedSignal("Value"):Connect(function()
+        box.Text = tostring(valueInst.Value)
+    end)
+
+    -- Try Remote: coba temukan beberapa remote candidates lalu pcall FireServer / InvokeServer
+    remoteBtn.MouseButton1Click:Connect(function()
+        local remotes = findRemoteByNames()
+        if #remotes == 0 then
+            -- fallback: list semua remot di ReplicatedStorage (berisiko noisy)
+            for _,inst in ipairs(ReplicatedStorage:GetDescendants()) do
+                if inst:IsA("RemoteEvent") or inst:IsA("RemoteFunction") then
+                    table.insert(remotes, inst)
+                end
+            end
+        end
+
+        -- coba panggil satu-per-satu (ringkas): FireServer(value), FireServer(valueInst.Name), FireServer()
+        for _, r in ipairs(remotes) do
+            local ok, err = pcall(function()
+                if r:IsA("RemoteEvent") then
+                    -- coba beberapa varian argumen
+                    local tryArgs = { valueInst.Value, valueInst.Name, tonumber(box.Text) or valueInst.Value }
+                    for _, arg in ipairs(tryArgs) do
+                        pcall(function() r:FireServer(arg) end)
+                    end
+                elseif r:IsA("RemoteFunction") then
+                    local tryArgs = { valueInst.Value, valueInst.Name, tonumber(box.Text) or valueInst.Value }
+                    for _, arg in ipairs(tryArgs) do
+                        pcall(function() r:InvokeServer(arg) end)
+                    end
+                end
+            end)
+            -- jangan spam terlalu cepat
+            task.wait(0.08)
+        end
+    end)
+end
+
+-- inisialisasi: cari value non-currency di stats dan buat row untuk tiap yang match keyword
+local function createOtherStatsEditor()
+    local stats = waitForStats(10)
+    if not stats then
+        warn("Tidak menemukan leaderstats/DataFolder untuk membuat editor.")
+        return
+    end
+
+    for _, v in ipairs(stats:GetChildren()) do
+        if (v:IsA("IntValue") or v:IsA("NumberValue")) and nameMatchesKeyword(v.Name) then
+            createGenericRow(Content, v)
+        end
+    end
+
+    -- jika ada child baru yang match kata kunci, buat row baru otomatis
+    stats.ChildAdded:Connect(function(child)
+        if (child:IsA("IntValue") or child:IsA("NumberValue")) and nameMatchesKeyword(child.Name) then
+            createGenericRow(Content, child)
+        end
+    end)
+end
+
+-- jalankan
+createOtherStatsEditor()
+
+
 
 print("✅ TPB loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. UI draggable.")
