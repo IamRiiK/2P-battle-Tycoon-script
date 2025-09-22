@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
+local TeleportService = game:GetService("TeleportService")
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
@@ -187,6 +188,25 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = MainScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
+
+-- GUI Buatan
+local ScreenGui = Instance.new("ScreenGui", LocalPlayer.PlayerGui)
+ScreenGui.Name = "CustomUI"
+
+local Frame = Instance.new("Frame", ScreenGui)
+Frame.Size = UDim2.new(0, 350, 0, 450)
+Frame.Position = UDim2.new(0.5, -175, 0.5, -225)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.Active = true
+Frame.Draggable = true
+
+-- Scroll list teleport
+local Scroller = Instance.new("ScrollingFrame", Frame)
+Scroller.Size = UDim2.new(1, -10, 1, -50)
+Scroller.Position = UDim2.new(0, 5, 0, 45)
+Scroller.CanvasSize = UDim2.new(0,0,5,0)
+Scroller.ScrollBarThickness = 6
+Scroller.BackgroundTransparency = 1
 
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
@@ -741,18 +761,6 @@ for k,_ in pairs(TELEPORT_COORDS) do
 end
 table.sort(teamKeys)
 
--- Teleport section header
-do
-    local heading = Instance.new("TextLabel", Content)
-    heading.Size = UDim2.new(1,0,0,22)
-    heading.BackgroundTransparency = 1
-    heading.Font = Enum.Font.GothamBold
-    heading.TextSize = 14
-    heading.TextColor3 = Color3.fromRGB(220,220,220)
-    heading.Text = "Teleport — Fixed Locations"
-    heading.TextXAlignment = Enum.TextXAlignment.Left
-end
-
 -- container for teleport buttons
 local teleportContainer = Instance.new("Frame", Content)
 teleportContainer.Size = UDim2.new(1,0,0,220)
@@ -771,30 +779,45 @@ teamLabel.TextColor3 = Color3.fromRGB(220,220,220)
 teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
 teamLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- small helper to create button
-local function makeTeleportBtn(text, cb)
-    local b = Instance.new("TextButton", teleportContainer)
-    b.Size = UDim2.new(1,0,0,30)
-    b.BackgroundColor3 = Color3.fromRGB(36,36,36)
-    b.Font = Enum.Font.Gotham
-    b.TextSize = 14
-    b.TextColor3 = Color3.fromRGB(235,235,235)
-    b.Text = text
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
-    b.MouseButton1Click:Connect(function()
-        pcall(cb)
-    end)
-    return b
+-- Fungsi teleport
+local function teleportPlayer(targetCFrame)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(targetCFrame)
+    end
 end
 
--- Repopulate teleport buttons for a team
-local function populateTeleportButtonsForTeam(teamKey)
-    -- clear existing non-label children (except teamLabel)
-    for _, child in ipairs(teleportContainer:GetChildren()) do
-        if child:IsA("TextButton") or child:IsA("Frame") then
-            if child ~= teamLabel then child:Destroy() end
+-- Tambah tombol teleport
+local function addTeleportButton(team, place, position)
+    local Button = Instance.new("TextButton", Scroller)
+    Button.Size = UDim2.new(1, -10, 0, 35)
+    Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    Button.TextColor3 = Color3.fromRGB(255, 255, 255) -- teks jadi putih
+    Button.Text = team .. " — " .. place
+    Button.Font = Enum.Font.SourceSansBold
+    Button.TextSize = 18
+    Button.BorderSizePixel = 0
+    Button.MouseButton1Click:Connect(function()
+        -- Spawn hanya bisa tim sendiri
+        if place == "Spawn" then
+            if string.lower(team) == string.lower(LocalPlayer.Team.Name) then
+                teleportPlayer(position)
+            else
+                warn("Tidak bisa teleport ke Spawn tim lain!")
+            end
+        else
+            teleportPlayer(position)
         end
+    end)
+end
+
+-- Generate semua tombol teleport
+for team, places in pairs(Locations) do
+    for place, pos in pairs(places) do
+        addTeleportButton(team, place, pos)
     end
+end
+
 
     local data = TELEPORT_COORDS[teamKey] or {}
     for place, vec in pairs(data) do
@@ -940,7 +963,7 @@ do
     local speedBox = Instance.new("TextBox", frame)
     speedBox.Size = UDim2.new(0.45,0,0,28)
     speedBox.Position = UDim2.new(0.55,0,0,22)
-    speedBox.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    speedBox.BackgroundColor3 = Color3.fromRGB(255,255,255)
     speedBox.TextColor3 = Color3.fromRGB(240,240,240)
     speedBox.Font = Enum.Font.Gotham
     speedBox.TextSize = 13
@@ -957,7 +980,7 @@ do
     local limitBox = Instance.new("TextBox", frame)
     limitBox.Size = UDim2.new(1,0,0,28)
     limitBox.Position = UDim2.new(0,0,0,52)
-    limitBox.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    limitBox.BackgroundColor3 = Color3.fromRGB(255,255,255)
     limitBox.TextColor3 = Color3.fromRGB(240,240,240)
     limitBox.Font = Enum.Font.Gotham
     limitBox.TextSize = 13
