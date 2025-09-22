@@ -824,31 +824,90 @@ local function teleportPlayer(vec3)
     end
 end
 
--- Tambah tombol teleport
-local function addTeleportButton(team, place, pos)
-    local btn = Instance.new("TextButton", teleportContainer)
-    btn.Name = "TPBtn"
-    btn.Size = UDim2.new(1,0,0,30)
-    btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 14
-    btn.Text = place
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+-- Container tombol teleport
+local teleportContainer = Instance.new("Frame", Content)
+teleportContainer.Size = UDim2.new(1,0,0,220)
+teleportContainer.BackgroundTransparency = 1
+local teleportLayout = Instance.new("UIListLayout", teleportContainer)
+teleportLayout.Padding = UDim.new(0,6)
 
-    btn.MouseButton1Click:Connect(function()
-        if place == "Spawn" then
-            local myTeam = (LocalPlayer.Team and LocalPlayer.Team.Name) or ""
-            if myTeam == team then
-                teleportPlayer(pos)
-            else
-                warn("❌ Tidak bisa teleport ke Spawn tim lain")
-            end
-        else
-            teleportPlayer(pos)
-        end
-    end)
+-- Simpan tombol teleport biar bisa dibersihkan
+local activeTeleportButtons = {}
+
+local function clearTeleportButtons()
+    for _, b in ipairs(activeTeleportButtons) do
+        if b and b.Parent then b:Destroy() end
+    end
+    activeTeleportButtons = {}
 end
+
+local function teleportPlayer(vec3)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0))
+    end
+end
+
+local function createTeleportButtonsForTeam(team)
+    clearTeleportButtons()
+    local places = TELEPORT_COORDS[team]
+    if not places then return end
+    for place, pos in pairs(places) do
+        local btn = Instance.new("TextButton", teleportContainer)
+        btn.Size = UDim2.new(1,0,0,30)
+        btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+        btn.TextColor3 = Color3.fromRGB(255,255,255)
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 14
+        btn.Text = place
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+
+        btn.MouseButton1Click:Connect(function()
+            if place == "Spawn" then
+                local myTeam = (LocalPlayer.Team and LocalPlayer.Team.Name) or ""
+                if myTeam == team then
+                    teleportPlayer(pos)
+                else
+                    warn("❌ Tidak bisa teleport ke Spawn tim lain")
+                end
+            else
+                teleportPlayer(pos)
+            end
+        end)
+
+        table.insert(activeTeleportButtons, btn)
+    end
+end
+
+-- Default generate
+local currentTeleportTeam = "Black"
+createTeleportButtonsForTeam(currentTeleportTeam)
+
+-- Tombol ganti tim
+do
+    local switchFrame = Instance.new("Frame", teleportContainer)
+    switchFrame.Size = UDim2.new(1,0,0,30)
+    switchFrame.BackgroundTransparency = 1
+    local x = 0
+    for team, _ in pairs(TELEPORT_COORDS) do
+        if team ~= "Flag" then
+            local tbtn = Instance.new("TextButton", switchFrame)
+            tbtn.Size = UDim2.new(0,70,1,0)
+            tbtn.Position = UDim2.new(0, x*75, 0, 0)
+            x = x + 1
+            tbtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+            tbtn.TextColor3 = Color3.fromRGB(230,230,230)
+            tbtn.Text = team
+            Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,6)
+
+            tbtn.MouseButton1Click:Connect(function()
+                currentTeleportTeam = team
+                createTeleportButtonsForTeam(team)
+            end)
+        end
+    end
+end
+
 
 -- Refresh tombol sesuai team aktif
 local function refreshTeleportButtons()
@@ -979,8 +1038,8 @@ do
     local limitBox = Instance.new("TextBox", frame)
     limitBox.Size = UDim2.new(1,0,0,28)
     limitBox.Position = UDim2.new(0,0,0,52)
-    limitBox.BackgroundColor3 = Color3.fromRGB(255,255,255)
-    limitBox.TextColor3 = Color3.fromRGB(240,240,240)
+    limitBox.BackgroundColor3 = Color3.fromRGB(020,020,020)
+    limitBox.TextColor3 = Color3.fromRGB(255,255,255)
     limitBox.Font = Enum.Font.Gotham
     limitBox.TextSize = 13
     limitBox.ClearTextOnFocus = false
