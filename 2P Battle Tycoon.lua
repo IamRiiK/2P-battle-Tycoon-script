@@ -755,12 +755,6 @@ end))
 
 -- ---------- Teleport UI & Logic ----------
 -- Utility to resolve all teams (keys present in TELEPORT_COORDS except "Flag")
-local teleportContainer = Instance.new("Frame", Content)
-teleportContainer.Size = UDim2.new(1,0,0,220)
-teleportContainer.BackgroundTransparency = 1
-local teleportLayout = Instance.new("UIListLayout", teleportContainer)
-teleportLayout.Padding = UDim.new(0,6)
-
 -- container for teleport buttons
 local teleportContainer = Instance.new("Frame", Content)
 teleportContainer.Size = UDim2.new(1,0,0,220)
@@ -769,6 +763,14 @@ local teleportLayout = Instance.new("UIListLayout", teleportContainer)
 teleportLayout.Padding = UDim.new(0,6)
 
 -- team selector (TextLabel + Dropdown-like simple list)
+-- Ambil daftar tim dari TELEPORT_COORDS (kecuali Flag)
+local teamKeys = {}
+for k, _ in pairs(TELEPORT_COORDS) do
+    if k ~= "Flag" then
+        table.insert(teamKeys, k)
+    end
+end
+
 local currentTeleportTeam = teamKeys[1] or "Black"
 local teamLabel = Instance.new("TextLabel", teleportContainer)
 teamLabel.Size = UDim2.new(1,0,0,20)
@@ -818,10 +820,6 @@ for team, places in pairs(TELEPORT_COORDS) do
         addTeleportButton(team, place, pos)
     end
 end
-
-    local data = TELEPORT_COORDS[teamKey] or {}
-    for place, vec in pairs(data) do
-        local placeName = place
         -- Spawn rule: only allow Spawn teleport if team matches player's team name
         local isSpawn = (placeName == "Spawn")
             -- Validate character & hrp
