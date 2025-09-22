@@ -755,11 +755,11 @@ end))
 
 -- ---------- Teleport UI & Logic ----------
 -- Utility to resolve all teams (keys present in TELEPORT_COORDS except "Flag")
-local teamKeys = {}
-for k,_ in pairs(TELEPORT_COORDS) do
-    if k ~= "Flag" then table.insert(teamKeys, k) end
-end
-table.sort(teamKeys)
+local teleportContainer = Instance.new("Frame", Content)
+teleportContainer.Size = UDim2.new(1,0,0,220)
+teleportContainer.BackgroundTransparency = 1
+local teleportLayout = Instance.new("UIListLayout", teleportContainer)
+teleportLayout.Padding = UDim.new(0,6)
 
 -- container for teleport buttons
 local teleportContainer = Instance.new("Frame", Content)
@@ -780,44 +780,44 @@ teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
 teamLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 -- Fungsi teleport
-local function teleportPlayer(targetCFrame)
+local function teleportPlayer(vec3)
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFrame.new(targetCFrame)
+        local hrp = char.HumanoidRootPart
+        hrp.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0)) -- offset biar ga nyangkut
     end
 end
 
 -- Tambah tombol teleport
-local function addTeleportButton(team, place, position)
-    local Button = Instance.new("TextButton", Scroller)
-    Button.Size = UDim2.new(1, -10, 0, 35)
-    Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    Button.TextColor3 = Color3.fromRGB(255, 255, 255) -- teks jadi putih
-    Button.Text = team .. " — " .. place
-    Button.Font = Enum.Font.SourceSansBold
-    Button.TextSize = 18
-    Button.BorderSizePixel = 0
-    Button.MouseButton1Click:Connect(function()
-        -- Spawn hanya bisa tim sendiri
+local function addTeleportButton(team, place, pos)
+    local btn = Instance.new("TextButton", teleportContainer)
+    btn.Size = UDim2.new(1,0,0,30)
+    btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.Text = team .. " — " .. place
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+
+    btn.MouseButton1Click:Connect(function()
         if place == "Spawn" then
-            if string.lower(team) == string.lower(LocalPlayer.Team.Name) then
-                teleportPlayer(position)
+            local myTeam = (LocalPlayer.Team and LocalPlayer.Team.Name) or ""
+            if myTeam == team then
+                teleportPlayer(pos)
             else
-                warn("Tidak bisa teleport ke Spawn tim lain!")
+                warn("❌ Tidak bisa teleport ke Spawn tim lain")
             end
         else
-            teleportPlayer(position)
+            teleportPlayer(pos)
         end
     end)
 end
-
 -- Generate semua tombol teleport
-for team, places in pairs(Locations) do
+for team, places in pairs(TELEPORT_COORDS) do
     for place, pos in pairs(places) do
         addTeleportButton(team, place, pos)
     end
 end
-
 
     local data = TELEPORT_COORDS[teamKey] or {}
     for place, vec in pairs(data) do
