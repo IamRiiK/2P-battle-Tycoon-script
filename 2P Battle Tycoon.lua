@@ -1,7 +1,5 @@
--- TPB Refactor + Teleport & Predictive Aimbot (compact UI, clean merge)
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -18,7 +16,6 @@ end
 local VIM = nil
 pcall(function() VIM = game:GetService("VirtualInputManager") end)
 
--- ---------- CONFIG / STATE ----------
 local FEATURE = {
     ESP = false,
     AutoE = false,
@@ -30,13 +27,12 @@ local FEATURE = {
     AIM_LERP = 0.4,
     AIM_HOLD = false,
     PredictiveAim = true,
-    ProjectileSpeed = 300, -- studs/sec (tweakable)
-    PredictionLimit = 1.5, -- max seconds lead
+    ProjectileSpeed = 300,
+    PredictionLimit = 1.5,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
 
--- Teleport coordinates (from user)
 local TELEPORT_COORDS = {
     ["Black"] = {
         Spaceship = Vector3.new(153.2, 683.7, 814.4),
@@ -99,7 +95,6 @@ local TELEPORT_COORDS = {
     },
 }
 
--- ---------- HELPERS & CONNECTION MANAGEMENT ----------
 local PersistentConnections = {}
 local PerPlayerConnections = {}
 
@@ -165,7 +160,6 @@ local function clamp(v, a, b)
     return v
 end
 
--- Ensure old GUI cleaned up on reload
 pcall(function()
     if _G and _G.__TPB_CLEANUP then pcall(_G.__TPB_CLEANUP) end
     local old = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
@@ -174,7 +168,6 @@ pcall(function()
     if old2 then old2:Destroy() end
 end)
 
--- ---------- MAIN UI (compact + separators non-clickable) ----------
 local MainScreenGui = Instance.new("ScreenGui")
 MainScreenGui.Name = "TPB_TycoonGUI_Final"
 MainScreenGui.DisplayOrder = 9999
@@ -182,13 +175,12 @@ safeParentGui(MainScreenGui)
 
 local MainFrame = Instance.new("Frame", MainScreenGui)
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0,340,0,520) -- compact-ish
+MainFrame.Size = UDim2.new(0,340,0,520)
 MainFrame.Position = UDim2.new(0.02,0,0.12,0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,10)
 
--- Title Bar
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,36)
 TitleBar.BackgroundTransparency = 1
@@ -211,7 +203,7 @@ TitleLabel.BackgroundTransparency = 1
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 16
 TitleLabel.TextColor3 = Color3.fromRGB(245,245,245)
-TitleLabel.Text = "⚔️ 2P Battle Tycoon"
+TitleLabel.Text = "⚔️2P Battle Tycoon"
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local HintLabel = Instance.new("TextLabel", TitleBar)
@@ -251,7 +243,6 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
--- draggable (clean)
 do
     local dragging = false
     local dragInput = nil
@@ -318,7 +309,6 @@ do
     keepPersistent(UIS.InputEnded:Connect(onInputEnded))
 end
 
--- HUD Gui (mini status)
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
@@ -361,7 +351,6 @@ local function updateHUD(name, state)
     end
 end
 
--- LeftAlt toggles UI
 keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.LeftAlt then
@@ -370,7 +359,6 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     end
 end))
 
--- helper: create a compact separator (non-clickable)
 local function createSeparator(parent, text)
     local lab = Instance.new("TextLabel", parent)
     lab.Size = UDim2.new(1,0,0,18)
@@ -383,7 +371,6 @@ local function createSeparator(parent, text)
     return lab
 end
 
--- Toggle buttons infra (compact look)
 local ToggleCallbacks = {}
 local Buttons = {}
 local function registerToggle(displayName, featureKey, onChange)
@@ -416,7 +403,6 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
--- WalkSpeed editor (compact single-line)
 do
     local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,36)
@@ -454,7 +440,6 @@ do
     end)
 end
 
--- ---------- ESP (same as before) ----------
 local espObjects = setmetatable({}, { __mode = "k" })
 local function rootPartOfCharacter(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
@@ -555,7 +540,6 @@ local function disableESP()
     for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
 end
 
--- ---------- Auto E ----------
 local autoEThread = nil
 local autoEStop = false
 local function startAutoE()
@@ -589,7 +573,6 @@ local function stopAutoE()
     updateHUD("Auto Press E", false)
 end
 
--- ---------- WalkSpeed ----------
 local OriginalWalkByCharacter = {}
 local function setPlayerWalkSpeedForCharacter(char, value)
     if not char then return end
@@ -632,7 +615,6 @@ local function restoreAllWalkSpeeds()
     updateHUD("WalkSpeed", false)
 end
 
--- ---------- Aimbot with Prediction ----------
 local angleBetweenVectors = function(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
@@ -705,7 +687,7 @@ keepPersistent(RunService.RenderStepped:Connect(function()
             if okTarget and p.Character then
                 local hum = p.Character:FindFirstChildOfClass("Humanoid")
                 if not hum or hum.Health <= 0 then
-                    -- skip
+                    
                 else
                     local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
                     if head then
@@ -746,7 +728,6 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- ---------- Teleport UI & Logic (compact, ScrollingFrame, non-clickable separators) ----------
 local teleportContainer = Instance.new("ScrollingFrame", Content)
 teleportContainer.Size = UDim2.new(1,0,0,160)
 teleportContainer.CanvasSize = UDim2.new(0,0,0,0)
@@ -758,12 +739,10 @@ local teleportListLayout = Instance.new("UIListLayout", teleportContainer)
 teleportListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 teleportListLayout.Padding = UDim.new(0,6)
 
--- keep canvas sized to content
 teleportListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
     teleportContainer.CanvasSize = UDim2.new(0,0,0, teleportListLayout.AbsoluteContentSize.Y + 12)
 end)
 
--- build team list (exclude "Flag")
 local teleportTeamKeys = {}
 for k, _ in pairs(TELEPORT_COORDS) do
     if k ~= "Flag" then
@@ -775,7 +754,6 @@ table.sort(teleportTeamKeys)
 local currentTeamIndex = 1
 local currentTeleportTeam = teleportTeamKeys[currentTeamIndex] or teleportTeamKeys[1] or "Black"
 
--- small header for teleport
 local tpHeader = Instance.new("Frame", teleportContainer)
 tpHeader.Size = UDim2.new(1,0,0,28)
 tpHeader.BackgroundTransparency = 1
@@ -813,7 +791,6 @@ btnNextTeam.TextColor3 = Color3.fromRGB(230,230,230)
 btnNextTeam.Text = ">"
 Instance.new("UICorner", btnNextTeam).CornerRadius = UDim.new(0,6)
 
--- active teleport buttons container (we'll create/destroy children inside teleportContainer directly)
 local activeTeleportButtons = {}
 
 local function clearTeleportButtons()
@@ -834,7 +811,7 @@ local function createTeleportButtonsForTeam(team)
     clearTeleportButtons()
     local places = TELEPORT_COORDS[team]
     if not places then return end
-    -- small separator label inside scroll (non-clickable)
+    
     local sep = createSeparator(teleportContainer, "Teleport: " .. team)
     table.insert(activeTeleportButtons, sep)
 
@@ -865,7 +842,6 @@ local function createTeleportButtonsForTeam(team)
         table.insert(activeTeleportButtons, btn)
     end
 
-    -- neutral flags
     local flagData = TELEPORT_COORDS["Flag"] or {}
     if next(flagData) then
         local fsep = createSeparator(teleportContainer, "Neutral / Flag")
@@ -902,10 +878,8 @@ btnNextTeam.MouseButton1Click:Connect(function()
     updateTeleportTeamLabel()
 end)
 
--- initialize teleport UI
 updateTeleportTeamLabel()
 
--- ---------- Aimbot compact settings (with separator non-clickable) ----------
 createSeparator(Content, "Aimbot Settings")
 
 local aimFrame = Instance.new("Frame", Content)
@@ -915,7 +889,6 @@ local aimLayout = Instance.new("UIListLayout", aimFrame)
 aimLayout.SortOrder = Enum.SortOrder.LayoutOrder
 aimLayout.Padding = UDim.new(0,6)
 
--- predictive toggle + inputs row
 local row = Instance.new("Frame", aimFrame)
 row.Size = UDim2.new(1,0,0,28)
 row.BackgroundTransparency = 1
@@ -971,10 +944,8 @@ limitBox.FocusLost:Connect(function(enter)
     end
 end)
 
--- Aimbot toggle compact
 registerToggle("Aimbot", "Aimbot", function(state) updateHUD("Aimbot", state) end)
 
--- ---------- Utility separator + toggles ----------
 createSeparator(Content, "Utility")
 registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
@@ -996,7 +967,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 
--- initial HUD state
 for k,_ in pairs(FEATURE) do
     local display = nil
     if k == "ESP" then display = "ESP" end
@@ -1007,7 +977,6 @@ for k,_ in pairs(FEATURE) do
     if display then updateHUD(display, FEATURE[k]) end
 end
 
--- hotkeys
 keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if UIS:GetFocusedTextBox() then return end
@@ -1017,7 +986,6 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
 end))
 
--- Character events
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
     restoreWalkSpeedForCharacter(char)
     stopAutoE()
@@ -1038,7 +1006,6 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     end
 end))
 
--- ---------- Global cleanup ----------
 if _G then
     _G.__TPB_CLEANUP = function()
         for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
@@ -1056,4 +1023,4 @@ if _G then
     end
 end
 
-print("✅ TPB Compact UI patched loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. Teleport panel compact ready.")
+print("✅Script Loaded")
