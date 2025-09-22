@@ -807,6 +807,23 @@ local function teleportPlayer(vec3)
     end
 end
 
+-- Utility: clear old buttons
+local function clearTeleportButtons()
+    for _, child in ipairs(teleportContainer:GetChildren()) do
+        if child:IsA("TextButton") and child.Name == "TPBtn" then
+            child:Destroy()
+        end
+    end
+end
+
+-- Fungsi teleport
+local function teleportPlayer(vec3)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0))
+    end
+end
+
 -- Tambah tombol teleport
 local function addTeleportButton(team, place, pos)
     local btn = Instance.new("TextButton", teleportContainer)
@@ -848,6 +865,27 @@ local function refreshTeleportButtons()
         addTeleportButton("Flag", name, vec)
     end
 end
+
+-- Jalankan pertama kali
+refreshTeleportButtons()
+
+-- Update saat switch team
+for _, tk in ipairs(teamKeys) do
+    local tbtn = Instance.new("TextButton", teleportContainer)
+    tbtn.Size = UDim2.new(1/#teamKeys, -4, 0, 30)
+    tbtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    tbtn.Font = Enum.Font.Gotham
+    tbtn.TextSize = 12
+    tbtn.TextColor3 = Color3.fromRGB(230,230,230)
+    tbtn.Text = tk
+    Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,6)
+    tbtn.MouseButton1Click:Connect(function()
+        currentTeleportTeam = tk
+        teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
+        refreshTeleportButtons()
+    end)
+end
+
 
 -- Jalankan pertama kali
 refreshTeleportButtons()
