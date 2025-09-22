@@ -820,43 +820,6 @@ for team, places in pairs(TELEPORT_COORDS) do
         addTeleportButton(team, place, pos)
     end
 end
-        -- Spawn rule: only allow Spawn teleport if team matches player's team name
-        local isSpawn = (placeName == "Spawn")
-            -- Validate character & hrp
-            local char = LocalPlayer.Character
-            if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-            if not hrp then return end
-
-            if isSpawn then
-                -- check player's team
-                local myTeamName = (LocalPlayer.Team and LocalPlayer.Team.Name) or ""
-                if tostring(myTeamName) ~= tostring(teamKey) then
-                    -- deny
-                    warn("Teleport to spawn denied: spawn teleport only to your own team.")
-                    return
-                end
-            end
-
-            -- safe teleport: set CFrame (with small upward offset to avoid getting stuck)
-            local targetPos = vec
-            local targetCFrame = CFrame.new(targetPos + Vector3.new(0, 3, 0))
-            pcall(function()
-                -- try set PrimaryPart CFrame first
-                if char.PrimaryPart then
-                    char:SetPrimaryPartCFrame(targetCFrame)
-                else
-                    local root = hrp
-                    root.CFrame = targetCFrame
-                end
-            end)
-        end)
-        -- optionally disable spawn buttons visually if not allowed
-        if isSpawn and (LocalPlayer.Team and LocalPlayer.Team.Name ~= teamKey) then
-            btn.BackgroundColor3 = Color3.fromRGB(80,80,80)
-        end
-    end
-end
 
 -- team switching buttons (compact)
 do
