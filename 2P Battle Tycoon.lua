@@ -790,15 +790,33 @@ local function teleportPlayer(vec3)
     end
 end
 
+-- Utility: clear old buttons
+local function clearTeleportButtons()
+    for _, child in ipairs(teleportContainer:GetChildren()) do
+        if child:IsA("TextButton") and child.Name == "TPBtn" then
+            child:Destroy()
+        end
+    end
+end
+
+-- Fungsi teleport
+local function teleportPlayer(vec3)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0))
+    end
+end
+
 -- Tambah tombol teleport
 local function addTeleportButton(team, place, pos)
     local btn = Instance.new("TextButton", teleportContainer)
+    btn.Name = "TPBtn"
     btn.Size = UDim2.new(1,0,0,30)
     btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
     btn.TextColor3 = Color3.fromRGB(255,255,255)
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 14
-    btn.Text = team .. " — " .. place
+    btn.Text = place
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
 
     btn.MouseButton1Click:Connect(function()
@@ -814,55 +832,43 @@ local function addTeleportButton(team, place, pos)
         end
     end)
 end
--- Generate semua tombol teleport
-for team, places in pairs(TELEPORT_COORDS) do
-    for place, pos in pairs(places) do
-        addTeleportButton(team, place, pos)
-    end
-end
 
--- team switching buttons (compact)
-do
-    local switchFrame = Instance.new("Frame", teleportContainer)
-    switchFrame.Size = UDim2.new(1,0,0,30)
-    switchFrame.BackgroundTransparency = 1
-    local inner = Instance.new("Frame", switchFrame)
-    inner.Size = UDim2.new(1,0,1,0)
-    inner.BackgroundTransparency = 1
-    local x = 0
-    for _, tk in ipairs(teamKeys) do
-        local tbtn = Instance.new("TextButton", inner)
-        tbtn.Size = UDim2.new(1/#teamKeys, -4, 1, 0)
-        tbtn.Position = UDim2.new(x/#teamKeys, 0, 0, 0)
-        x = x + 1
-        tbtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-        tbtn.Font = Enum.Font.Gotham
-        tbtn.TextSize = 12
-        tbtn.TextColor3 = Color3.fromRGB(230,230,230)
-        tbtn.Text = tk
-        Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,6)
-        tbtn.MouseButton1Click:Connect(function()
-            currentTeleportTeam = tk
-            teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
-        end)
+-- Refresh tombol sesuai team aktif
+local function refreshTeleportButtons()
+    clearTeleportButtons()
+    local places = TELEPORT_COORDS[currentTeleportTeam]
+    if places then
+        for place, pos in pairs(places) do
+            addTeleportButton(currentTeleportTeam, place, pos)
+        end
     end
-end
-
--- Flag / neutral area button(s)
-do
+    -- tambahkan tombol Flag/Neutral
     local flagData = TELEPORT_COORDS["Flag"] or {}
     for name, vec in pairs(flagData) do
-            local char = LocalPlayer.Character
-            if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
-            if not hrp then return end
-            local targetCFrame = CFrame.new(vec + Vector3.new(0,3,0))
-            pcall(function()
-                if char.PrimaryPart then char:SetPrimaryPartCFrame(targetCFrame) else hrp.CFrame = targetCFrame end
-            end)
-        end)
+        addTeleportButton("Flag", name, vec)
     end
 end
+
+-- Jalankan pertama kali
+refreshTeleportButtons()
+
+-- Update saat switch team
+for _, tk in ipairs(teamKeys) do
+    local tbtn = Instance.new("TextButton", teleportContainer)
+    tbtn.Size = UDim2.new(1/#teamKeys, -4, 0, 30)
+    tbtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    tbtn.Font = Enum.Font.Gotham
+    tbtn.TextSize = 12
+    tbtn.TextColor3 = Color3.fromRGB(230,230,230)
+    tbtn.Text = tk
+    Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,6)
+    tbtn.MouseButton1Click:Connect(function()
+        currentTeleportTeam = tk
+        teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
+        refreshTeleportButtons()
+    end)
+end
+
 
 -- ---------- Register toggles ----------
 registerToggle("ESP", "ESP", function(state)
