@@ -1,4 +1,4 @@
--- TPB Refactor + Teleport & Predictive Aimbot (merged full)
+-- TPB Refactor + Teleport & Predictive Aimbot (compact UI, clean merge)
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 -- Services
@@ -36,7 +36,7 @@ local FEATURE = {
 
 local WALK_UPDATE_INTERVAL = 0.12
 
--- Teleport coordinates (single definition, from user)
+-- Teleport coordinates (from user)
 local TELEPORT_COORDS = {
     ["Black"] = {
         Spaceship = Vector3.new(153.2, 683.7, 814.4),
@@ -182,20 +182,20 @@ safeParentGui(MainScreenGui)
 
 local MainFrame = Instance.new("Frame", MainScreenGui)
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0,360,0,660)
-MainFrame.Position = UDim2.new(0.28,0,0.12,0)
+MainFrame.Size = UDim2.new(0,340,0,520) -- compact-ish
+MainFrame.Position = UDim2.new(0.02,0,0.12,0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,10)
 
 -- Title Bar
 local TitleBar = Instance.new("Frame", MainFrame)
-TitleBar.Size = UDim2.new(1,0,0,40)
+TitleBar.Size = UDim2.new(1,0,0,36)
 TitleBar.BackgroundTransparency = 1
 
 local DragHandle = Instance.new("TextLabel", TitleBar)
 DragHandle.Size = UDim2.new(0,28,0,28)
-DragHandle.Position = UDim2.new(0,8,0,6)
+DragHandle.Position = UDim2.new(0,8,0,4)
 DragHandle.BackgroundTransparency = 1
 DragHandle.Font = Enum.Font.Gotham
 DragHandle.TextSize = 20
@@ -204,19 +204,19 @@ DragHandle.Text = "≡"
 DragHandle.Active = true
 DragHandle.Selectable = true
 
-local Title = Instance.new("TextLabel", TitleBar)
-Title.Size = UDim2.new(0.6,0,1,0)
-Title.Position = UDim2.new(0.07,0,0,0)
-Title.BackgroundTransparency = 1
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 18
-Title.TextColor3 = Color3.fromRGB(245,245,245)
-Title.Text = "⚔️ 2P Battle Tycoon"
-Title.TextXAlignment = Enum.TextXAlignment.Left
+local TitleLabel = Instance.new("TextLabel", TitleBar)
+TitleLabel.Size = UDim2.new(1,-110,1,0)
+TitleLabel.Position = UDim2.new(0.07,0,0,0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 16
+TitleLabel.TextColor3 = Color3.fromRGB(245,245,245)
+TitleLabel.Text = "⚔️ 2P Battle Tycoon (Compact)"
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local HintLabel = Instance.new("TextLabel", TitleBar)
-HintLabel.Size = UDim2.new(0.36,-60,1,0)
-HintLabel.Position = UDim2.new(0.64,0,0,0)
+HintLabel.Size = UDim2.new(0.3,0,1,0)
+HintLabel.Position = UDim2.new(0.7,0,0,0)
 HintLabel.BackgroundTransparency = 1
 HintLabel.Font = Enum.Font.Gotham
 HintLabel.TextSize = 12
@@ -225,22 +225,24 @@ HintLabel.Text = "LeftAlt = Hide UI"
 HintLabel.TextXAlignment = Enum.TextXAlignment.Right
 
 local MinBtn = Instance.new("TextButton", TitleBar)
-MinBtn.Size = UDim2.new(0,38,0,28)
-MinBtn.Position = UDim2.new(1,-46,0,6)
+MinBtn.Size = UDim2.new(0,36,0,28)
+MinBtn.Position = UDim2.new(1,-42,0,4)
 MinBtn.BackgroundColor3 = Color3.fromRGB(58,58,60)
 MinBtn.Font = Enum.Font.GothamBold
-MinBtn.TextSize = 20
+MinBtn.TextSize = 18
 MinBtn.TextColor3 = Color3.fromRGB(240,240,240)
 MinBtn.Text = "-"
-Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,8)
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,6)
 
 local Content = Instance.new("Frame", MainFrame)
 Content.Name = "Content"
 Content.Size = UDim2.new(1,-16,1,-56)
-Content.Position = UDim2.new(0,8,0,48)
+Content.Position = UDim2.new(0,8,0,44)
 Content.BackgroundTransparency = 1
+
 local listLayout = Instance.new("UIListLayout", Content)
-listLayout.Padding = UDim.new(0,12)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0,8)
 
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
@@ -249,7 +251,7 @@ MinBtn.MouseButton1Click:Connect(function()
     MinBtn.Text = minimized and "+" or "-"
 end)
 
--- draggable (same as before, but cleaned)
+-- draggable (clean)
 do
     local dragging = false
     local dragInput = nil
@@ -322,8 +324,8 @@ HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
 safeParentGui(HUDGui)
 local HUD = Instance.new("Frame", HUDGui)
-HUD.Size = UDim2.new(0,220,0,130)
-HUD.Position = UDim2.new(1,-230,1,-160)
+HUD.Size = UDim2.new(0,220,0,120)
+HUD.Position = UDim2.new(1,-240,1,-150)
 HUD.BackgroundColor3 = Color3.fromRGB(20,20,20)
 HUD.BackgroundTransparency = 0.06
 HUD.BorderSizePixel = 0
@@ -335,11 +337,11 @@ HUDList.SortOrder = Enum.SortOrder.LayoutOrder
 local hudLabels = {}
 local function hudAdd(name)
     local l = Instance.new("TextLabel", HUD)
-    l.Size = UDim2.new(1,-12,0,20)
+    l.Size = UDim2.new(1,-12,0,18)
     l.Position = UDim2.new(0,8,0,0)
     l.BackgroundTransparency = 1
     l.Font = Enum.Font.Gotham
-    l.TextSize = 14
+    l.TextSize = 13
     l.TextColor3 = Color3.fromRGB(220,220,220)
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.Text = name .. ": OFF"
@@ -386,13 +388,13 @@ local ToggleCallbacks = {}
 local Buttons = {}
 local function registerToggle(displayName, featureKey, onChange)
     local btn = Instance.new("TextButton", Content)
-    btn.Size = UDim2.new(1,0,0,36)
+    btn.Size = UDim2.new(1,0,0,32)
     btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
     btn.TextColor3 = Color3.fromRGB(235,235,235)
     btn.Font = Enum.Font.Gotham
-    btn.TextSize = 15
+    btn.TextSize = 14
     btn.Text = displayName .. " [OFF]"
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
     btn.Parent = Content
     local function setState(state)
         local old = FEATURE[featureKey]
@@ -414,29 +416,31 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
--- WalkSpeed editor (compact single-line with placeholder)
+-- WalkSpeed editor (compact single-line)
 do
     local frame = Instance.new("Frame", Content)
-    frame.Size = UDim2.new(1,0,0,40)
+    frame.Size = UDim2.new(1,0,0,36)
     frame.BackgroundTransparency = 1
     local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.55,-8,1,0)
+    label.Size = UDim2.new(0.5,0,1,0)
     label.BackgroundTransparency = 1
     label.Font = Enum.Font.Gotham
     label.TextSize = 13
     label.TextColor3 = Color3.fromRGB(230,230,230)
     label.Text = "WalkSpeed"
+    label.TextXAlignment = Enum.TextXAlignment.Left
+
     local box = Instance.new("TextBox", frame)
-    box.Size = UDim2.new(0.45,-12,0,28)
-    box.Position = UDim2.new(0.55,0,0.5,-14)
-    box.BackgroundColor3 = Color3.fromRGB(32,32,32)
+    box.Size = UDim2.new(0.5,-6,1,0)
+    box.Position = UDim2.new(0.5,6,0,0)
+    box.BackgroundColor3 = Color3.fromRGB(36,36,36)
     box.TextColor3 = Color3.fromRGB(240,240,240)
     box.Font = Enum.Font.Gotham
     box.TextSize = 13
     box.ClearTextOnFocus = false
     box.Text = tostring(FEATURE.WalkValue)
-    box.PlaceholderText = "16–200 (rec 25-40)"
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0,8)
+    box.PlaceholderText = "16–200"
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,6)
     box.FocusLost:Connect(function(enter)
         if enter then
             local n = tonumber(box.Text)
@@ -448,10 +452,9 @@ do
             end
         end
     end)
-    frame.Parent = Content
 end
 
--- ---------- ESP (improved duplicate-safety) ----------
+-- ---------- ESP (same as before) ----------
 local espObjects = setmetatable({}, { __mode = "k" })
 local function rootPartOfCharacter(char)
     return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
@@ -637,7 +640,6 @@ local angleBetweenVectors = function(a, b)
     return math.deg(math.acos(val))
 end
 
--- store last positions/last update times for velocity estimation
 local playerMotion = setmetatable({}, { __mode = "k" })
 local function updatePlayerMotion(p, root)
     if not p or not root then return end
@@ -650,7 +652,6 @@ local function updatePlayerMotion(p, root)
     local dt = now - (rec.t or now)
     if dt > 0 then
         local newVel = (root.Position - rec.pos) / dt
-        -- simple smoothing to reduce jitter
         rec.vel = rec.vel:Lerp(newVel, math.clamp(dt * 10, 0, 1))
         rec.pos = root.Position
         rec.t = now
@@ -661,7 +662,6 @@ local function updatePlayerMotion(p, root)
 end
 
 local function getPredictedPosition(part)
-    -- returns predicted position for a part using stored playerMotion and FEATURE.ProjectileSpeed
     if not part then return nil end
     local owner = nil
     for _, p in ipairs(Players:GetPlayers()) do
@@ -678,12 +678,10 @@ local function getPredictedPosition(part)
     local projectileSpeed = math.max(1, FEATURE.ProjectileSpeed or 300)
     local t = distance / projectileSpeed
     t = clamp(t, 0, FEATURE.PredictionLimit or 1.5)
-    -- simple gravity compensation is ignored (game-dependent)
     return basePos + vel * t
 end
 
 keepPersistent(RunService.RenderStepped:Connect(function()
-    -- update player motions (for all players with rootparts)
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             local root = rootPartOfCharacter(p.Character)
@@ -707,7 +705,7 @@ keepPersistent(RunService.RenderStepped:Connect(function()
             if okTarget and p.Character then
                 local hum = p.Character:FindFirstChildOfClass("Humanoid")
                 if not hum or hum.Health <= 0 then
-                    -- skip dead
+                    -- skip
                 else
                     local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
                     if head then
@@ -748,150 +746,230 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- ---------- Teleport UI & Logic (integrated into main UI) ----------
--- Teleport scrolling area inside Content
-do
-    -- container for teleport area (frame inside Content)
-    local tpFrame = Instance.new("Frame", Content)
-    tpFrame.Size = UDim2.new(1,0,0,220)
-    tpFrame.BackgroundTransparency = 1
-    local tpLayout = Instance.new("UIListLayout", tpFrame)
-    tpLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    tpLayout.Padding = UDim.new(0,6)
+-- ---------- Teleport UI & Logic (compact, ScrollingFrame, non-clickable separators) ----------
+local teleportContainer = Instance.new("ScrollingFrame", Content)
+teleportContainer.Size = UDim2.new(1,0,0,160)
+teleportContainer.CanvasSize = UDim2.new(0,0,0,0)
+teleportContainer.ScrollBarThickness = 6
+teleportContainer.BackgroundTransparency = 1
+teleportContainer.VerticalScrollBarInset = Enum.ScrollBarInset.Always
 
-    -- header
-    local header = Instance.new("TextLabel", tpFrame)
-    header.Size = UDim2.new(1,0,0,18)
-    header.BackgroundTransparency = 1
-    header.Font = Enum.Font.GothamBold
-    header.TextSize = 14
-    header.TextColor3 = Color3.fromRGB(220,220,220)
-    header.Text = "Teleport"
+local teleportListLayout = Instance.new("UIListLayout", teleportContainer)
+teleportListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+teleportListLayout.Padding = UDim.new(0,6)
 
-    -- Flag buttons first (if any)
+-- keep canvas sized to content
+teleportListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    teleportContainer.CanvasSize = UDim2.new(0,0,0, teleportListLayout.AbsoluteContentSize.Y + 12)
+end)
+
+-- build team list (exclude "Flag")
+local teleportTeamKeys = {}
+for k, _ in pairs(TELEPORT_COORDS) do
+    if k ~= "Flag" then
+        table.insert(teleportTeamKeys, k)
+    end
+end
+table.sort(teleportTeamKeys)
+
+local currentTeamIndex = 1
+local currentTeleportTeam = teleportTeamKeys[currentTeamIndex] or teleportTeamKeys[1] or "Black"
+
+-- small header for teleport
+local tpHeader = Instance.new("Frame", teleportContainer)
+tpHeader.Size = UDim2.new(1,0,0,28)
+tpHeader.BackgroundTransparency = 1
+local teamLabel = Instance.new("TextLabel", tpHeader)
+teamLabel.Size = UDim2.new(0.6,0,1,0)
+teamLabel.BackgroundTransparency = 1
+teamLabel.Font = Enum.Font.Gotham
+teamLabel.TextSize = 13
+teamLabel.TextColor3 = Color3.fromRGB(220,220,220)
+teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
+teamLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local switchHolder = Instance.new("Frame", tpHeader)
+switchHolder.Size = UDim2.new(0.4,0,1,0)
+switchHolder.Position = UDim2.new(0.6,0,0,0)
+switchHolder.BackgroundTransparency = 1
+
+local btnPrevTeam = Instance.new("TextButton", switchHolder)
+btnPrevTeam.Size = UDim2.new(0.48,0,0.7,0)
+btnPrevTeam.Position = UDim2.new(0,0.02,0.15,0)
+btnPrevTeam.BackgroundColor3 = Color3.fromRGB(60,60,60)
+btnPrevTeam.Font = Enum.Font.Gotham
+btnPrevTeam.TextSize = 12
+btnPrevTeam.TextColor3 = Color3.fromRGB(230,230,230)
+btnPrevTeam.Text = "<"
+Instance.new("UICorner", btnPrevTeam).CornerRadius = UDim.new(0,6)
+
+local btnNextTeam = Instance.new("TextButton", switchHolder)
+btnNextTeam.Size = UDim2.new(0.48,0,0.7,0)
+btnNextTeam.Position = UDim2.new(0.52,0.02,0.15,0)
+btnNextTeam.BackgroundColor3 = Color3.fromRGB(60,60,60)
+btnNextTeam.Font = Enum.Font.Gotham
+btnNextTeam.TextSize = 12
+btnNextTeam.TextColor3 = Color3.fromRGB(230,230,230)
+btnNextTeam.Text = ">"
+Instance.new("UICorner", btnNextTeam).CornerRadius = UDim.new(0,6)
+
+-- active teleport buttons container (we'll create/destroy children inside teleportContainer directly)
+local activeTeleportButtons = {}
+
+local function clearTeleportButtons()
+    for _, b in ipairs(activeTeleportButtons) do
+        if b and b.Parent then b:Destroy() end
+    end
+    activeTeleportButtons = {}
+end
+
+local function teleportPlayerTo(vec3)
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0))
+    end
+end
+
+local function createTeleportButtonsForTeam(team)
+    clearTeleportButtons()
+    local places = TELEPORT_COORDS[team]
+    if not places then return end
+    -- small separator label inside scroll (non-clickable)
+    local sep = createSeparator(teleportContainer, "Teleport: " .. team)
+    table.insert(activeTeleportButtons, sep)
+
+    for place, pos in pairs(places) do
+        local btn = Instance.new("TextButton", teleportContainer)
+        btn.Size = UDim2.new(1,0,0,30)
+        btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+        btn.TextColor3 = Color3.fromRGB(235,235,235)
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 13
+        btn.Name = "TPBtn"
+        btn.Text = place
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+
+        btn.MouseButton1Click:Connect(function()
+            if place == "Spawn" then
+                local myTeamName = (LocalPlayer.Team and LocalPlayer.Team.Name) or ""
+                if myTeamName == team then
+                    teleportPlayerTo(pos)
+                else
+                    warn("❌ Tidak bisa teleport ke Spawn tim lain")
+                end
+            else
+                teleportPlayerTo(pos)
+            end
+        end)
+
+        table.insert(activeTeleportButtons, btn)
+    end
+
+    -- neutral flags
     local flagData = TELEPORT_COORDS["Flag"] or {}
     if next(flagData) then
-        local fsep = createSeparator(tpFrame, "Neutral / Flag")
-        -- single button for each named flag
+        local fsep = createSeparator(teleportContainer, "Neutral / Flag")
+        table.insert(activeTeleportButtons, fsep)
         for name, vec in pairs(flagData) do
-            local fbtn = Instance.new("TextButton", tpFrame)
+            local fbtn = Instance.new("TextButton", teleportContainer)
             fbtn.Size = UDim2.new(1,0,0,30)
             fbtn.BackgroundColor3 = Color3.fromRGB(55,55,55)
             fbtn.TextColor3 = Color3.fromRGB(240,240,240)
             fbtn.Font = Enum.Font.Gotham
             fbtn.TextSize = 13
-            fbtn.Text = "Flag: " .. tostring(name)
+            fbtn.Text = name
             Instance.new("UICorner", fbtn).CornerRadius = UDim.new(0,6)
-            fbtn.MouseButton1Click:Connect(function()
-                teleportTo(vec + Vector3.new(0,3,0))
-            end)
+            fbtn.MouseButton1Click:Connect(function() teleportPlayerTo(vec) end)
+            table.insert(activeTeleportButtons, fbtn)
         end
     end
-
-    -- create per-team sections and buttons
-    for teamName, places in pairs(TELEPORT_COORDS) do
-        if teamName ~= "Flag" then
-            local sep = createSeparator(tpFrame, teamName .. " Team")
-            for placeName, pos in pairs(places) do
-                local btn = Instance.new("TextButton", tpFrame)
-                btn.Size = UDim2.new(1,0,0,30)
-                btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-                btn.TextColor3 = Color3.fromRGB(235,235,235)
-                btn.Font = Enum.Font.Gotham
-                btn.TextSize = 13
-                btn.Text = placeName
-                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-                btn.MouseButton1Click:Connect(function()
-                    if placeName == "Spawn" then
-                        local myTeam = LocalPlayer.Team and LocalPlayer.Team.Name or ""
-                        if myTeam == teamName then
-                            teleportTo(pos + Vector3.new(0,3,0))
-                        else
-                            warn("❌ Tidak bisa teleport ke Spawn tim lain")
-                        end
-                    else
-                        teleportTo(pos + Vector3.new(0,3,0))
-                    end
-                end)
-            end
-        end
-    end
-
-    tpFrame.Parent = Content
 end
+
+local function updateTeleportTeamLabel()
+    currentTeleportTeam = teleportTeamKeys[currentTeamIndex] or currentTeleportTeam
+    teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
+    createTeleportButtonsForTeam(currentTeleportTeam)
+end
+
+btnPrevTeam.MouseButton1Click:Connect(function()
+    currentTeamIndex = currentTeamIndex - 1
+    if currentTeamIndex < 1 then currentTeamIndex = #teleportTeamKeys end
+    updateTeleportTeamLabel()
+end)
+btnNextTeam.MouseButton1Click:Connect(function()
+    currentTeamIndex = currentTeamIndex + 1
+    if currentTeamIndex > #teleportTeamKeys then currentTeamIndex = 1 end
+    updateTeleportTeamLabel()
+end)
+
+-- initialize teleport UI
+updateTeleportTeamLabel()
 
 -- ---------- Aimbot compact settings (with separator non-clickable) ----------
 createSeparator(Content, "Aimbot Settings")
 
-do
-    local aimFrame = Instance.new("Frame", Content)
-    aimFrame.Size = UDim2.new(1,0,0,84)
-    aimFrame.BackgroundTransparency = 1
-    local label = Instance.new("TextLabel", aimFrame)
-    label.Size = UDim2.new(1,0,0,18)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.Gotham
-    label.TextSize = 13
-    label.TextColor3 = Color3.fromRGB(220,220,220)
-    label.Text = "Aimbot Prediction Settings"
+local aimFrame = Instance.new("Frame", Content)
+aimFrame.Size = UDim2.new(1,0,0,72)
+aimFrame.BackgroundTransparency = 1
+local aimLayout = Instance.new("UIListLayout", aimFrame)
+aimLayout.SortOrder = Enum.SortOrder.LayoutOrder
+aimLayout.Padding = UDim.new(0,6)
 
-    local row = Instance.new("Frame", aimFrame)
-    row.Size = UDim2.new(1,0,0,28)
-    row.Position = UDim2.new(0,0,0,22)
-    row.BackgroundTransparency = 1
+-- predictive toggle + inputs row
+local row = Instance.new("Frame", aimFrame)
+row.Size = UDim2.new(1,0,0,28)
+row.BackgroundTransparency = 1
 
-    local predBtn = Instance.new("TextButton", row)
-    predBtn.Size = UDim2.new(0.45,0,1,0)
-    predBtn.BackgroundColor3 = Color3.fromRGB(36,36,36)
-    predBtn.Font = Enum.Font.Gotham
-    predBtn.TextSize = 13
-    predBtn.TextColor3 = Color3.fromRGB(235,235,235)
+local predBtn = Instance.new("TextButton", row)
+predBtn.Size = UDim2.new(0.42,0,1,0)
+predBtn.Position = UDim2.new(0,0,0,0)
+predBtn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+predBtn.Font = Enum.Font.Gotham
+predBtn.TextSize = 13
+predBtn.TextColor3 = Color3.fromRGB(235,235,235)
+predBtn.Text = "Predictive: " .. (FEATURE.PredictiveAim and "ON" or "OFF")
+Instance.new("UICorner", predBtn).CornerRadius = UDim.new(0,6)
+predBtn.MouseButton1Click:Connect(function()
+    FEATURE.PredictiveAim = not FEATURE.PredictiveAim
     predBtn.Text = "Predictive: " .. (FEATURE.PredictiveAim and "ON" or "OFF")
-    Instance.new("UICorner", predBtn).CornerRadius = UDim.new(0,8)
-    predBtn.MouseButton1Click:Connect(function()
-        FEATURE.PredictiveAim = not FEATURE.PredictiveAim
-        predBtn.Text = "Predictive: " .. (FEATURE.PredictiveAim and "ON" or "OFF")
-        updateHUD("PredictiveAim", FEATURE.PredictiveAim)
-    end)
+    updateHUD("PredictiveAim", FEATURE.PredictiveAim)
+end)
 
-    local speedBox = Instance.new("TextBox", row)
-    speedBox.Size = UDim2.new(0.275,0,1,0)
-    speedBox.Position = UDim2.new(0.47,6,0,0)
-    speedBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
-    speedBox.TextColor3 = Color3.fromRGB(240,240,240)
-    speedBox.Font = Enum.Font.Gotham
-    speedBox.TextSize = 13
-    speedBox.ClearTextOnFocus = false
-    speedBox.Text = tostring(FEATURE.ProjectileSpeed)
-    speedBox.PlaceholderText = "Projectile Speed (10-5000)"
-    Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,8)
-    speedBox.FocusLost:Connect(function(enter)
-        if enter then
-            local n = tonumber(speedBox.Text)
-            if n and n >= 10 and n <= 5000 then FEATURE.ProjectileSpeed = n else speedBox.Text = tostring(FEATURE.ProjectileSpeed) end
-        end
-    end)
+local speedBox = Instance.new("TextBox", row)
+speedBox.Size = UDim2.new(0.28,0,1,0)
+speedBox.Position = UDim2.new(0.44,6,0,0)
+speedBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
+speedBox.TextColor3 = Color3.fromRGB(240,240,240)
+speedBox.Font = Enum.Font.Gotham
+speedBox.TextSize = 13
+speedBox.ClearTextOnFocus = false
+speedBox.Text = tostring(FEATURE.ProjectileSpeed)
+speedBox.PlaceholderText = "Speed"
+Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
+speedBox.FocusLost:Connect(function(enter)
+    if enter then
+        local n = tonumber(speedBox.Text)
+        if n and n >= 10 and n <= 5000 then FEATURE.ProjectileSpeed = n else speedBox.Text = tostring(FEATURE.ProjectileSpeed) end
+    end
+end)
 
-    local limitBox = Instance.new("TextBox", row)
-    limitBox.Size = UDim2.new(0.275,0,1,0)
-    limitBox.Position = UDim2.new(0.755,6,0,0)
-    limitBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
-    limitBox.TextColor3 = Color3.fromRGB(240,240,240)
-    limitBox.Font = Enum.Font.Gotham
-    limitBox.TextSize = 13
-    limitBox.ClearTextOnFocus = false
-    limitBox.Text = tostring(FEATURE.PredictionLimit)
-    limitBox.PlaceholderText = "Prediction Limit (0.1-5)"
-    Instance.new("UICorner", limitBox).CornerRadius = UDim.new(0,8)
-    limitBox.FocusLost:Connect(function(enter)
-        if enter then
-            local n = tonumber(limitBox.Text)
-            if n and n >= 0.1 and n <= 5 then FEATURE.PredictionLimit = n else limitBox.Text = tostring(FEATURE.PredictionLimit) end
-        end
-    end)
-
-    aimFrame.Parent = Content
-end
+local limitBox = Instance.new("TextBox", row)
+limitBox.Size = UDim2.new(0.28,0,1,0)
+limitBox.Position = UDim2.new(0.72,6,0,0)
+limitBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
+limitBox.TextColor3 = Color3.fromRGB(240,240,240)
+limitBox.Font = Enum.Font.Gotham
+limitBox.TextSize = 13
+limitBox.ClearTextOnFocus = false
+limitBox.Text = tostring(FEATURE.PredictionLimit)
+limitBox.PlaceholderText = "Limit"
+Instance.new("UICorner", limitBox).CornerRadius = UDim.new(0,6)
+limitBox.FocusLost:Connect(function(enter)
+    if enter then
+        local n = tonumber(limitBox.Text)
+        if n and n >= 0.1 and n <= 5 then FEATURE.PredictionLimit = n else limitBox.Text = tostring(FEATURE.PredictionLimit) end
+    end
+end)
 
 -- Aimbot toggle compact
 registerToggle("Aimbot", "Aimbot", function(state) updateHUD("Aimbot", state) end)
@@ -978,5 +1056,4 @@ if _G then
     end
 end
 
-print("✅ TPB Full merged loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. Teleport panel integrated.")
-
+print("✅ TPB Compact UI patched loaded. Toggles: F1=ESP, F2=AutoE, F3=Walk, F4=Aimbot. LeftAlt toggles UI/HUD. Teleport panel compact ready.")
