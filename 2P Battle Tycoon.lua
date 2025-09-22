@@ -182,31 +182,12 @@ safeParentGui(MainScreenGui)
 
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0,360,0,660) -- sedikit lebih tinggi untuk Teleport
+MainFrame.Size = UDim2.new(0,360,0,660)
 MainFrame.Position = UDim2.new(0.28,0,0.12,0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = MainScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
-
--- GUI Buatan
-local ScreenGui = Instance.new("ScreenGui", LocalPlayer.PlayerGui)
-ScreenGui.Name = "CustomUI"
-
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 350, 0, 450)
-Frame.Position = UDim2.new(0.5, -175, 0.5, -225)
-Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-Frame.Active = true
-Frame.Draggable = true
-
--- Scroll list teleport
-local Scroller = Instance.new("ScrollingFrame", Frame)
-Scroller.Size = UDim2.new(1, -10, 1, -50)
-Scroller.Position = UDim2.new(0, 5, 0, 45)
-Scroller.CanvasSize = UDim2.new(0,0,5,0)
-Scroller.ScrollBarThickness = 6
-Scroller.BackgroundTransparency = 1
 
 local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1,0,0,40)
@@ -753,25 +734,26 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- ---------- Teleport UI & Logic ----------
+-- ---------- Teleport UI & Logic (CLEAN MERGE) ----------
 -- Utility to resolve all teams (keys present in TELEPORT_COORDS except "Flag")
--- container for teleport buttons
 local teleportContainer = Instance.new("Frame", Content)
 teleportContainer.Size = UDim2.new(1,0,0,220)
 teleportContainer.BackgroundTransparency = 1
 local teleportLayout = Instance.new("UIListLayout", teleportContainer)
 teleportLayout.Padding = UDim.new(0,6)
 
--- team selector (TextLabel + Dropdown-like simple list)
--- Ambil daftar tim dari TELEPORT_COORDS (kecuali Flag)
+-- build team list (exclude "Flag")
 local teamKeys = {}
 for k, _ in pairs(TELEPORT_COORDS) do
     if k ~= "Flag" then
         table.insert(teamKeys, k)
     end
 end
+table.sort(teamKeys) -- optional stable order
 
-local currentTeleportTeam = teamKeys[1] or "Black"
+local currentTeamIndex = 1
+local currentTeleportTeam = teamKeys[currentTeamIndex] or "Black"
+
 local teamLabel = Instance.new("TextLabel", teleportContainer)
 teamLabel.Size = UDim2.new(1,0,0,20)
 teamLabel.BackgroundTransparency = 1
@@ -781,59 +763,28 @@ teamLabel.TextColor3 = Color3.fromRGB(220,220,220)
 teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
 teamLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- Fungsi teleport
-local function teleportPlayer(vec3)
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        local hrp = char.HumanoidRootPart
-        hrp.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0)) -- offset biar ga nyangkut
-    end
-end
+-- Prev/Next buttons to switch team
+local btnPrev = Instance.new("TextButton", teleportContainer)
+btnPrev.Size = UDim2.new(0.48,0,0,24)
+btnPrev.BackgroundColor3 = Color3.fromRGB(60,60,60)
+btnPrev.TextColor3 = Color3.fromRGB(230,230,230)
+btnPrev.Font = Enum.Font.Gotham
+btnPrev.TextSize = 13
+btnPrev.Text = "< Prev"
+Instance.new("UICorner", btnPrev).CornerRadius = UDim.new(0,6)
 
--- Utility: clear old buttons
-local function clearTeleportButtons()
-    for _, child in ipairs(teleportContainer:GetChildren()) do
-        if child:IsA("TextButton") and child.Name == "TPBtn" then
-            child:Destroy()
-        end
-    end
-end
+local btnNext = Instance.new("TextButton", teleportContainer)
+btnNext.Size = UDim2.new(0.48,0,0,24)
+btnNext.Position = UDim2.new(0.52,0,0,0)
+btnNext.BackgroundColor3 = Color3.fromRGB(60,60,60)
+btnNext.TextColor3 = Color3.fromRGB(230,230,230)
+btnNext.Font = Enum.Font.Gotham
+btnNext.TextSize = 13
+btnNext.Text = "Next >"
+Instance.new("UICorner", btnNext).CornerRadius = UDim.new(0,6)
 
--- Fungsi teleport
-local function teleportPlayer(vec3)
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0))
-    end
-end
-
--- Utility: clear old buttons
-local function clearTeleportButtons()
-    for _, child in ipairs(teleportContainer:GetChildren()) do
-        if child:IsA("TextButton") and child.Name == "TPBtn" then
-            child:Destroy()
-        end
-    end
-end
-
--- Fungsi teleport
-local function teleportPlayer(vec3)
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0))
-    end
-end
-
--- Container tombol teleport
-local teleportContainer = Instance.new("Frame", Content)
-teleportContainer.Size = UDim2.new(1,0,0,220)
-teleportContainer.BackgroundTransparency = 1
-local teleportLayout = Instance.new("UIListLayout", teleportContainer)
-teleportLayout.Padding = UDim.new(0,6)
-
--- Simpan tombol teleport biar bisa dibersihkan
+-- teleport helpers
 local activeTeleportButtons = {}
-
 local function clearTeleportButtons()
     for _, b in ipairs(activeTeleportButtons) do
         if b and b.Parent then b:Destroy() end
@@ -841,7 +792,7 @@ local function clearTeleportButtons()
     activeTeleportButtons = {}
 end
 
-local function teleportPlayer(vec3)
+local function teleportPlayerTo(vec3)
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
         char.HumanoidRootPart.CFrame = CFrame.new(vec3 + Vector3.new(0,3,0))
@@ -864,108 +815,56 @@ local function createTeleportButtonsForTeam(team)
 
         btn.MouseButton1Click:Connect(function()
             if place == "Spawn" then
-                local myTeam = (LocalPlayer.Team and LocalPlayer.Team.Name) or ""
-                if myTeam == team then
-                    teleportPlayer(pos)
+                local myTeamName = (LocalPlayer.Team and LocalPlayer.Team.Name) or ""
+                if myTeamName == team then
+                    teleportPlayerTo(pos)
                 else
                     warn("❌ Tidak bisa teleport ke Spawn tim lain")
                 end
             else
-                teleportPlayer(pos)
+                teleportPlayerTo(pos)
             end
         end)
 
         table.insert(activeTeleportButtons, btn)
     end
-end
 
--- Default generate
-local currentTeleportTeam = "Black"
-createTeleportButtonsForTeam(currentTeleportTeam)
-
--- Tombol ganti tim
-do
-    local switchFrame = Instance.new("Frame", teleportContainer)
-    switchFrame.Size = UDim2.new(1,0,0,30)
-    switchFrame.BackgroundTransparency = 1
-    local x = 0
-    for team, _ in pairs(TELEPORT_COORDS) do
-        if team ~= "Flag" then
-            local tbtn = Instance.new("TextButton", switchFrame)
-            tbtn.Size = UDim2.new(0,70,1,0)
-            tbtn.Position = UDim2.new(0, x*75, 0, 0)
-            x = x + 1
-            tbtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-            tbtn.TextColor3 = Color3.fromRGB(230,230,230)
-            tbtn.Text = team
-            Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,6)
-
-            tbtn.MouseButton1Click:Connect(function()
-                currentTeleportTeam = team
-                createTeleportButtonsForTeam(team)
-            end)
-        end
-    end
-end
-
-
--- Refresh tombol sesuai team aktif
-local function refreshTeleportButtons()
-    clearTeleportButtons()
-    local places = TELEPORT_COORDS[currentTeleportTeam]
-    if places then
-        for place, pos in pairs(places) do
-            addTeleportButton(currentTeleportTeam, place, pos)
-        end
-    end
-    -- tambahkan tombol Flag/Neutral
+    -- also add Flag/Neutral buttons
     local flagData = TELEPORT_COORDS["Flag"] or {}
     for name, vec in pairs(flagData) do
-        addTeleportButton("Flag", name, vec)
+        local fbtn = Instance.new("TextButton", teleportContainer)
+        fbtn.Size = UDim2.new(1,0,0,30)
+        fbtn.BackgroundColor3 = Color3.fromRGB(55,55,55)
+        fbtn.TextColor3 = Color3.fromRGB(240,240,240)
+        fbtn.Font = Enum.Font.Gotham
+        fbtn.TextSize = 14
+        fbtn.Text = "Flag: " .. name
+        Instance.new("UICorner", fbtn).CornerRadius = UDim.new(0,6)
+        fbtn.MouseButton1Click:Connect(function() teleportPlayerTo(vec) end)
+        table.insert(activeTeleportButtons, fbtn)
     end
 end
 
--- Jalankan pertama kali
-refreshTeleportButtons()
-
--- Update saat switch team
-for _, tk in ipairs(teamKeys) do
-    local tbtn = Instance.new("TextButton", teleportContainer)
-    tbtn.Size = UDim2.new(1/#teamKeys, -4, 0, 30)
-    tbtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    tbtn.Font = Enum.Font.Gotham
-    tbtn.TextSize = 12
-    tbtn.TextColor3 = Color3.fromRGB(230,230,230)
-    tbtn.Text = tk
-    Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,6)
-    tbtn.MouseButton1Click:Connect(function()
-        currentTeleportTeam = tk
-        teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
-        refreshTeleportButtons()
-    end)
+local function updateTeamLabel()
+    currentTeleportTeam = teamKeys[currentTeamIndex]
+    teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
+    createTeleportButtonsForTeam(currentTeleportTeam)
 end
 
+btnPrev.MouseButton1Click:Connect(function()
+    currentTeamIndex = currentTeamIndex - 1
+    if currentTeamIndex < 1 then currentTeamIndex = #teamKeys end
+    updateTeamLabel()
+end)
 
--- Jalankan pertama kali
-refreshTeleportButtons()
+btnNext.MouseButton1Click:Connect(function()
+    currentTeamIndex = currentTeamIndex + 1
+    if currentTeamIndex > #teamKeys then currentTeamIndex = 1 end
+    updateTeamLabel()
+end)
 
--- Update saat switch team
-for _, tk in ipairs(teamKeys) do
-    local tbtn = Instance.new("TextButton", teleportContainer)
-    tbtn.Size = UDim2.new(1/#teamKeys, -4, 0, 30)
-    tbtn.BackgroundColor3 = Color3.fromRGB(40,40,40)
-    tbtn.Font = Enum.Font.Gotham
-    tbtn.TextSize = 12
-    tbtn.TextColor3 = Color3.fromRGB(230,230,230)
-    tbtn.Text = tk
-    Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,6)
-    tbtn.MouseButton1Click:Connect(function()
-        currentTeleportTeam = tk
-        teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
-        refreshTeleportButtons()
-    end)
-end
-
+-- initialize teleport UI
+updateTeamLabel()
 
 -- ---------- Register toggles ----------
 registerToggle("ESP", "ESP", function(state)
@@ -979,9 +878,7 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     if state then
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then
-                OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed
-            end
+            if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
         updateHUD("WalkSpeed", true)
@@ -1038,7 +935,7 @@ do
     local limitBox = Instance.new("TextBox", frame)
     limitBox.Size = UDim2.new(1,0,0,28)
     limitBox.Position = UDim2.new(0,0,0,52)
-    limitBox.BackgroundColor3 = Color3.fromRGB(020,020,020)
+    limitBox.BackgroundColor3 = Color3.fromRGB(20,20,20)
     limitBox.TextColor3 = Color3.fromRGB(255,255,255)
     limitBox.Font = Enum.Font.Gotham
     limitBox.TextSize = 13
