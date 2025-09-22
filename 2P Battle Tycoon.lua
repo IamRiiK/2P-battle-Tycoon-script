@@ -211,7 +211,7 @@ TitleLabel.BackgroundTransparency = 1
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 16
 TitleLabel.TextColor3 = Color3.fromRGB(245,245,245)
-TitleLabel.Text = "⚔️ 2P Battle Tycoon (Compact)"
+TitleLabel.Text = "⚔️ 2P Battle Tycoon"
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local HintLabel = Instance.new("TextLabel", TitleBar)
