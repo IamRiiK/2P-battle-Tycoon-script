@@ -824,7 +824,6 @@ end
         local placeName = place
         -- Spawn rule: only allow Spawn teleport if team matches player's team name
         local isSpawn = (placeName == "Spawn")
-        local btn = makeTeleportBtn(teamKey .. " — " .. placeName, function()
             -- Validate character & hrp
             local char = LocalPlayer.Character
             if not char then return end
@@ -861,9 +860,6 @@ end
     end
 end
 
--- initial populate
-populateTeleportButtonsForTeam(currentTeleportTeam)
-
 -- team switching buttons (compact)
 do
     local switchFrame = Instance.new("Frame", teleportContainer)
@@ -887,7 +883,6 @@ do
         tbtn.MouseButton1Click:Connect(function()
             currentTeleportTeam = tk
             teamLabel.Text = "Team: " .. tostring(currentTeleportTeam)
-            populateTeleportButtonsForTeam(currentTeleportTeam)
         end)
     end
 end
@@ -896,7 +891,6 @@ end
 do
     local flagData = TELEPORT_COORDS["Flag"] or {}
     for name, vec in pairs(flagData) do
-        makeTeleportBtn("Flag — " .. tostring(name), function()
             local char = LocalPlayer.Character
             if not char then return end
             local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
