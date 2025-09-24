@@ -99,6 +99,24 @@ local TELEPORT_COORDS = {
     },
 }
 
+local fakeBringClones = {}
+local function clearFakeBring()
+    for _, clone in pairs(fakeBringClones) do
+        if clone then clone:Destroy() end
+    end
+    fakeBringClones = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            for _, part in ipairs(plr.Character:GetDescendants()) do
+                if part:IsA("BasePart") or part:IsA("Decal") then
+                    part.LocalTransparencyModifier = 0
+                end
+            end
+        end
+    end
+end
+
+
 local function updateFakeBring()
     if not FEATURE.FakeBring then
         clearFakeBring()
@@ -295,6 +313,9 @@ Content.BackgroundTransparency = 1
 local listLayout = Instance.new("UIListLayout", Content)
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 listLayout.Padding = UDim.new(0,8)
+
+registerPlayerSelector("Fake Bring Targets", "FakeBringTargets")
+
 
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
@@ -1097,12 +1118,27 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
 end)
 
 registerToggle("Fake Bring", "FakeBring", function(state)
-    if not state then
-        stopFakeBring()
+    if state then
+        -- aktifkan, mulai jalankan loop update
+        keepPersistent(RunService.RenderStepped:Connect(updateFakeBring))
+    else
+        -- nonaktif, hapus semua clone dan restore
+        for _, clone in pairs(fakeBringClones) do
+            if clone then clone:Destroy() end
+        end
+        fakeBringClones = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                for _, part in ipairs(plr.Character:GetDescendants()) do
+                    if part:IsA("BasePart") or part:IsA("Decal") then
+                        part.LocalTransparencyModifier = 0
+                    end
+                end
+            end
+        end
     end
 end)
 
-registerPlayerSelector("Fake Bring Targets", "FakeBringTargets")
 
 
 
