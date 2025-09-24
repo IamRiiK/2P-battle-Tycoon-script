@@ -29,6 +29,10 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
+    FakeBring = false,
+    FakeBringRange = 5,
+    FakeBringTargets = {}, -- tabel nama player yang dipilih
+
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -94,6 +98,62 @@ local TELEPORT_COORDS = {
         Neutral = Vector3.new(-24.8, 42.3, -83.2),
     },
 }
+
+local function updateFakeBring()
+    if not FEATURE.FakeBring then
+        clearFakeBring()
+        return
+    end
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    local root = myChar:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and FEATURE.FakeBringTargets[plr.Name] then
+            local char = plr.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                if not fakeBringClones[plr] then
+                    local clone = char:Clone()
+                    for _, d in ipairs(clone:GetDescendants()) do
+                        if d:IsA("Script") or d:IsA("LocalScript") then d:Destroy() end
+                    end
+                    clone.Name = plr.Name .. "_Fake"
+                    clone.Parent = workspace
+                    fakeBringClones[plr] = clone
+                end
+
+                local fake = fakeBringClones[plr]
+                if fake and fake:FindFirstChild("HumanoidRootPart") then
+                    local offset = CFrame.new(0, 0, -(FEATURE.FakeBringRange or 5))
+                    fake:PivotTo(root.CFrame * offset)
+                    -- hide original
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") or part:IsA("Decal") then
+                            part.LocalTransparencyModifier = 1
+                        end
+                    end
+                end
+            end
+        else
+            -- kalau tidak dipilih → pastikan clone dihapus
+            if fakeBringClones[plr] then
+                fakeBringClones[plr]:Destroy()
+                fakeBringClones[plr] = nil
+            end
+            -- restore visibility
+            if plr.Character then
+                for _, part in ipairs(plr.Character:GetDescendants()) do
+                    if part:IsA("BasePart") or part:IsA("Decal") then
+                        part.LocalTransparencyModifier = 0
+                    end
+                end
+            end
+        end
+    end
+end
+
+
 
 local PersistentConnections = {}
 local PerPlayerConnections = {}
@@ -397,6 +457,75 @@ local function registerToggle(displayName, featureKey, onChange)
             end
         end
     end
+
+local function registerPlayerSelector(name, featureKey)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 120)
+    container.BackgroundTransparency = 1
+    container.Name = name
+    container.Parent = MainFrame
+
+    local label = Instance.new("TextLabel")
+    label.Text = name
+    label.Size = UDim2.new(1, -10, 0, 20)
+    label.Position = UDim2.new(0, 5, 0, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.SourceSansBold
+    label.TextSize = 16
+    label.Parent = container
+
+    local listFrame = Instance.new("ScrollingFrame")
+    listFrame.Size = UDim2.new(1, -10, 1, -25)
+    listFrame.Position = UDim2.new(0, 5, 0, 25)
+    listFrame.BackgroundTransparency = 0.3
+    listFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    listFrame.BorderSizePixel = 0
+    listFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    listFrame.ScrollBarThickness = 6
+    listFrame.Parent = container
+
+    local layout = Instance.new("UIListLayout")
+    layout.Parent = listFrame
+    layout.Padding = UDim.new(0, 2)
+
+    local function refreshPlayers()
+        for _, child in ipairs(listFrame:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, -5, 0, 20)
+                btn.Text = plr.Name
+                btn.BackgroundColor3 = FEATURE[featureKey][plr.Name] and Color3.fromRGB(0, 170, 0) or Color3.fromRGB(80, 80, 80)
+                btn.TextColor3 = Color3.new(1, 1, 1)
+                btn.Font = Enum.Font.SourceSans
+                btn.TextSize = 14
+                btn.AutoButtonColor = true
+                btn.Parent = listFrame
+
+                btn.MouseButton1Click:Connect(function()
+                    if FEATURE[featureKey][plr.Name] then
+                        FEATURE[featureKey][plr.Name] = nil
+                        btn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+                    else
+                        FEATURE[featureKey][plr.Name] = true
+                        btn.BackgroundColor3 = Color3.fromRGB(0, 170, 0)
+                    end
+                end)
+            end
+        end
+        listFrame.CanvasSize = UDim2.new(0, 0, 0, #Players:GetPlayers() * 22)
+    end
+
+    refreshPlayers()
+    Players.PlayerAdded:Connect(refreshPlayers)
+    Players.PlayerRemoving:Connect(refreshPlayers)
+end
+
+    
     btn.MouseButton1Click:Connect(function() setState(not FEATURE[featureKey]) end)
     ToggleCallbacks[featureKey] = setState
     Buttons[featureKey] = btn
@@ -966,6 +1095,16 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
         restoreWalkSpeedForCharacter(LocalPlayer.Character)
     end
 end)
+
+registerToggle("Fake Bring", "FakeBring", function(state)
+    if not state then
+        stopFakeBring()
+    end
+end)
+
+registerPlayerSelector("Fake Bring Targets", "FakeBringTargets")
+
+
 
 for k,_ in pairs(FEATURE) do
     local display = nil
