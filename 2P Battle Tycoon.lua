@@ -1035,6 +1035,65 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 
+-- ================= Auto Teleport Enemy =================
+FEATURE.AutoTeleportEnemy = false
+local AutoTeleportEnemyThread = nil
+local AutoTeleportEnemyInterval = 1.5 -- detik
+
+local function teleportToRandomEnemy()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local enemies = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and (not LocalPlayer.Team or p.Team ~= LocalPlayer.Team) then
+            table.insert(enemies, p)
+        end
+    end
+    if #enemies == 0 then return end
+    local target = enemies[math.random(1,#enemies)]
+    local targetChar = target.Character
+    if targetChar and targetChar:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(targetChar.HumanoidRootPart.Position + Vector3.new(0,3,0))
+    end
+end
+
+local function startAutoTeleportEnemy()
+    if AutoTeleportEnemyThread then return end
+    AutoTeleportEnemyThread = task.spawn(function()
+        while FEATURE.AutoTeleportEnemy do
+            pcall(teleportToRandomEnemy)
+            task.wait(AutoTeleportEnemyInterval)
+        end
+        AutoTeleportEnemyThread = nil
+    end)
+end
+
+local function stopAutoTeleportEnemy()
+    FEATURE.AutoTeleportEnemy = false
+end
+
+-- Toggle UI
+local autoTeleportToggle = registerToggle("Auto Teleport Enemy", "AutoTeleportEnemy", function(state)
+    if state then startAutoTeleportEnemy() else stopAutoTeleportEnemy() end
+end)
+
+-- Hotkey T untuk toggle
+keepPersistent(UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.T then
+        local newState = not FEATURE.AutoTeleportEnemy
+        FEATURE.AutoTeleportEnemy = newState
+        autoTeleportToggle.Text = "Auto Teleport Enemy [" .. (newState and "ON" or "OFF") .. "]"
+        if newState then
+            startAutoTeleportEnemy()
+        else
+            stopAutoTeleportEnemy()
+        end
+    end
+end))
+-- ========================================================
+
+
 for k,_ in pairs(FEATURE) do
     local display = nil
     if k == "ESP" then display = "ESP" end
