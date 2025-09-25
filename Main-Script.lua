@@ -27,7 +27,7 @@ local FEATURE = {
     AIM_LERP = 0.4,
     AIM_HOLD = false,
     PredictiveAim = false,
-    ProjectileSpeed = 100,
+    ProjectileSpeed = 50,
     PredictionLimit = 0.5,
 }
 
