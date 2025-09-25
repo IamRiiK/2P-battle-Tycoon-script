@@ -26,9 +26,9 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false,
-    PredictiveAim = true,
-    ProjectileSpeed = 300,
-    PredictionLimit = 1.5,
+    PredictiveAim = false,
+    ProjectileSpeed = 100,
+    PredictionLimit = 0.5,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
