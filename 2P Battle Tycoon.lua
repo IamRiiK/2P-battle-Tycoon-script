@@ -33,6 +33,8 @@ local FEATURE = {
 
 }
 
+local SelectedTarget = nil
+
 local WALK_UPDATE_INTERVAL = 0.12
 
 local TELEPORT_COORDS = {
@@ -619,6 +621,19 @@ local function restoreAllWalkSpeeds()
     updateHUD("WalkSpeed", false)
 end
 
+local function getValidPlayers()
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if not LocalPlayer.Team or not p.Team or (p.Team ~= LocalPlayer.Team) then
+                table.insert(list, p)
+            end
+        end
+    end
+    return list
+end
+
+
 local angleBetweenVectors = function(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
@@ -685,10 +700,14 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     local bestHead = nil
     local bestAngle = 1e9
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local okTarget = false
-            if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) else okTarget = true end
-            if okTarget and p.Character then
+    if p ~= LocalPlayer then
+        local okTarget = false
+        if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) else okTarget = true end
+        if okTarget and p.Character then
+            if SelectedTarget and p ~= SelectedTarget then
+                continue
+            end
+
                 local hum = p.Character:FindFirstChildOfClass("Humanoid")
                 if not hum or hum.Health <= 0 then
                     
@@ -1028,6 +1047,30 @@ registerToggle("Auto TP Shot", "AutoTP", function(state)
     else
         stopAutoTP()
     end
+end)
+
+local playerDropdown = Instance.new("TextButton", Content)
+playerDropdown.Size = UDim2.new(1,0,0,32)
+playerDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
+playerDropdown.TextColor3 = Color3.fromRGB(235,235,235)
+playerDropdown.Font = Enum.Font.Gotham
+playerDropdown.TextSize = 14
+playerDropdown.Text = "🎯 Pilih Target: NONE"
+Instance.new("UICorner", playerDropdown).CornerRadius = UDim.new(0,6)
+
+playerDropdown.MouseButton1Click:Connect(function()
+    local valid = getValidPlayers()
+    if #valid == 0 then
+        playerDropdown.Text = "🎯 Tidak ada target"
+        SelectedTarget = nil
+        return
+    end
+    
+    local idx = table.find(valid, SelectedTarget) or 0
+    idx = idx + 1
+    if idx > #valid then idx = 1 end
+    SelectedTarget = valid[idx]
+    playerDropdown.Text = "🎯 Target: " .. SelectedTarget.Name
 end)
 
 
