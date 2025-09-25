@@ -29,7 +29,7 @@ local FEATURE = {
     PredictiveAim = false,
     ProjectileSpeed = 100,
     PredictionLimit = 0.5,
-    AutoTP = false
+    AutoTP = false,
     AutoTPShot = false,
 
 }
