@@ -348,7 +348,7 @@ hudAdd("WalkSpeed")
 hudAdd("Aimbot")
 hudAdd("PredictiveAim")
 hudAdd("Auto TP")
-
+hudAdd("Auto TP Shot")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -1032,7 +1032,7 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 
-registerToggle("AutoTP", function(state)
+registerToggle("AutoTP Shot", "AutoTP" function(state)
     if state then
         startAutoTP()
     else
