@@ -129,6 +129,29 @@ local function setupAutoTP(tool)
     end)
 end
 
+local function connectTools(char)
+    for _, tool in ipairs(char:GetChildren()) do
+        if tool:IsA("Tool") then
+            setupAutoTP(tool)
+        end
+    end
+    char.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            setupAutoTP(child)
+        end
+    end)
+end
+
+if LocalPlayer.Character then
+    connectTools(LocalPlayer.Character)
+end
+
+LocalPlayer.CharacterAdded:Connect(function(char)
+    char:WaitForChild("HumanoidRootPart", 3)
+    task.wait(0.5)
+    connectTools(char)
+end)
+
 
 local function keepPersistent(conn)
     if conn and conn.Disconnect then
