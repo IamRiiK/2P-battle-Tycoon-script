@@ -104,14 +104,27 @@ local PersistentConnections = {}
 local PerPlayerConnections = {}
 
 local function setupAutoTP(tool)
+    local originalCFrame = nil
+
     tool.Activated:Connect(function()
         if FEATURE.AutoTPShot and SelectedTarget and SelectedTarget.Character and SelectedTarget.Character:FindFirstChild("HumanoidRootPart") then
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             local targetHRP = SelectedTarget.Character.HumanoidRootPart
             if hrp and targetHRP then
-                -- Offset di belakang target
-                hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-2)
+                -- Simpan posisi asli
+                originalCFrame = hrp.CFrame
+
+                -- Teleport ke belakang target
+                hrp.CFrame = targetHRP.CFrame * CFrame.new(-2, 0, 0)
             end
+        end
+    end)
+
+    tool.Deactivated:Connect(function()
+        if FEATURE.AutoTPShot and originalCFrame and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            -- Kembali ke posisi asal
+            LocalPlayer.Character.HumanoidRootPart.CFrame = originalCFrame
+            originalCFrame = nil
         end
     end)
 end
