@@ -175,8 +175,8 @@ safeParentGui(MainScreenGui)
 
 local MainFrame = Instance.new("Frame", MainScreenGui)
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0,340,0,520)
-MainFrame.Position = UDim2.new(0.02,0,0.12,0)
+MainFrame.Size = UDim2.new(0,440,0,600) -- Lebar & tinggi diperbesar
+MainFrame.Position = UDim2.new(0.02,0,0.10,0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
 MainFrame.BorderSizePixel = 0
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,10)
@@ -231,6 +231,148 @@ Content.Name = "Content"
 Content.Size = UDim2.new(1,-16,1,-56)
 Content.Position = UDim2.new(0,8,0,44)
 Content.BackgroundTransparency = 1
+-- === AUTO TELEPORT UI ===
+local autoTPFrame = Instance.new("Frame", Content)
+autoTPFrame.Size = UDim2.new(1,0,0,40)
+autoTPFrame.BackgroundTransparency = 1
+autoTPFrame.LayoutOrder = 100
+
+local autoTPLabel = Instance.new("TextLabel", autoTPFrame)
+autoTPLabel.Size = UDim2.new(0.4,0,1,0)
+autoTPLabel.BackgroundTransparency = 1
+autoTPLabel.Font = Enum.Font.Gotham
+autoTPLabel.TextSize = 14
+autoTPLabel.TextColor3 = Color3.fromRGB(230,230,230)
+autoTPLabel.Text = "Auto Teleport Target:"
+autoTPLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local autoTPDropdown = Instance.new("TextButton", autoTPFrame)
+autoTPDropdown.Size = UDim2.new(0.4,0,1,0)
+autoTPDropdown.Position = UDim2.new(0.4,8,0,0)
+autoTPDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
+autoTPDropdown.TextColor3 = Color3.fromRGB(240,240,240)
+autoTPDropdown.Font = Enum.Font.Gotham
+autoTPDropdown.TextSize = 13
+autoTPDropdown.Text = "Pilih Musuh"
+Instance.new("UICorner", autoTPDropdown).CornerRadius = UDim.new(0,6)
+
+local autoTPListFrame = Instance.new("Frame", autoTPFrame)
+autoTPListFrame.Size = UDim2.new(0.4,0,0,100)
+autoTPListFrame.Position = UDim2.new(0.4,8,1,0)
+autoTPListFrame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+autoTPListFrame.Visible = false
+autoTPListFrame.ClipsDescendants = true
+autoTPListFrame.ZIndex = 10
+Instance.new("UICorner", autoTPListFrame).CornerRadius = UDim.new(0,6)
+
+local autoTPListLayout = Instance.new("UIListLayout", autoTPListFrame)
+autoTPListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+autoTPListLayout.Padding = UDim.new(0,2)
+
+local autoTPEnabled = false
+local autoTPSelected = nil
+local autoTPThread = nil
+
+local function autoTPRefreshEnemyList()
+    for _, c in ipairs(autoTPListFrame:GetChildren()) do
+        if c:IsA("TextButton") then c:Destroy() end
+    end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local btn = Instance.new("TextButton", autoTPListFrame)
+            btn.Size = UDim2.new(1,0,0,24)
+            btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            btn.TextColor3 = Color3.fromRGB(235,235,235)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 12
+            btn.Text = p.Name
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+            btn.MouseButton1Click:Connect(function()
+                autoTPSelected = p
+                autoTPDropdown.Text = "Target: "..p.Name
+                autoTPListFrame.Visible = false
+            end)
+        end
+    end
+end
+
+autoTPDropdown.MouseButton1Click:Connect(function()
+    autoTPRefreshEnemyList()
+    autoTPListFrame.ZIndex = 10
+    for _, c in ipairs(autoTPListFrame:GetChildren()) do
+        if c:IsA("GuiObject") then c.ZIndex = 11 end
+    end
+    autoTPListFrame.Visible = not autoTPListFrame.Visible
+end)
+
+UIS.InputBegan:Connect(function(input, gp)
+    if autoTPListFrame.Visible and input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local mousePos = UIS:GetMouseLocation()
+        local absPos = autoTPListFrame.AbsolutePosition
+        local absSize = autoTPListFrame.AbsoluteSize
+        if not (mousePos.X >= absPos.X and mousePos.X <= absPos.X+absSize.X and mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y+absSize.Y) then
+            autoTPListFrame.Visible = false
+        end
+    end
+end)
+
+local autoTPToggleBtn = Instance.new("TextButton", autoTPFrame)
+autoTPToggleBtn.Size = UDim2.new(0.18,0,1,0)
+autoTPToggleBtn.Position = UDim2.new(0.8,8,0,0)
+autoTPToggleBtn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+autoTPToggleBtn.TextColor3 = Color3.fromRGB(235,235,235)
+autoTPToggleBtn.Font = Enum.Font.Gotham
+autoTPToggleBtn.TextSize = 14
+autoTPToggleBtn.Text = "Auto TP [OFF] (T)"
+Instance.new("UICorner", autoTPToggleBtn).CornerRadius = UDim.new(0,6)
+
+local function startAutoTP()
+    if autoTPThread then return end
+    autoTPThread = task.spawn(function()
+        while autoTPEnabled and autoTPSelected and autoTPSelected.Character and autoTPSelected.Character:FindFirstChild("HumanoidRootPart") do
+            local myChar = LocalPlayer.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                local originalCF = myRoot.CFrame
+                local enemyRoot = autoTPSelected.Character:FindFirstChild("HumanoidRootPart")
+                if enemyRoot then
+                    myRoot.CFrame = enemyRoot.CFrame + Vector3.new(0,2,0)
+                    task.wait(0.25)
+                    myRoot.CFrame = originalCF
+                    task.wait(0.25)
+                else
+                    break
+                end
+            else
+                break
+            end
+        end
+        autoTPThread = nil
+    end)
+end
+
+local function stopAutoTP()
+    autoTPEnabled = false
+    autoTPThread = nil
+end
+
+local function toggleAutoTP(state)
+    autoTPEnabled = state
+    autoTPToggleBtn.Text = "Auto TP ["..(autoTPEnabled and "ON" or "OFF").."] (T)"
+    autoTPToggleBtn.BackgroundColor3 = autoTPEnabled and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+    if autoTPEnabled and autoTPSelected then startAutoTP() else stopAutoTP() end
+end
+
+autoTPToggleBtn.MouseButton1Click:Connect(function()
+    toggleAutoTP(not autoTPEnabled)
+end)
+
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.T then
+        toggleAutoTP(not autoTPEnabled)
+    end
+end)
 
 local listLayout = Instance.new("UIListLayout", Content)
 listLayout.SortOrder = Enum.SortOrder.LayoutOrder
