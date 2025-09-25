@@ -33,7 +33,7 @@ local FEATURE = {
     AutoTPInterval = 0.5,
     AutoTP_Target = nil, -- Player target
 }
--- UI: Dropdown untuk memilih target musuh AutoTP
+-- Fungsi getEnemyPlayers tetap di sini
 local function getEnemyPlayers()
     local enemies = {}
     for _, p in ipairs(Players:GetPlayers()) do
@@ -44,60 +44,65 @@ local function getEnemyPlayers()
     return enemies
 end
 
-local autoTPDropdownFrame = Instance.new("Frame", Content)
-autoTPDropdownFrame.Size = UDim2.new(1,0,0,32)
-autoTPDropdownFrame.BackgroundTransparency = 1
-local autoTPDropdownLabel = Instance.new("TextLabel", autoTPDropdownFrame)
-autoTPDropdownLabel.Size = UDim2.new(0.4,0,1,0)
-autoTPDropdownLabel.BackgroundTransparency = 1
-autoTPDropdownLabel.Font = Enum.Font.Gotham
-autoTPDropdownLabel.TextSize = 13
-autoTPDropdownLabel.TextColor3 = Color3.fromRGB(230,230,230)
-autoTPDropdownLabel.Text = "AutoTP Target:"
-autoTPDropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local autoTPDropdown = Instance.new("TextButton", autoTPDropdownFrame)
-autoTPDropdown.Size = UDim2.new(0.6,-6,1,0)
-autoTPDropdown.Position = UDim2.new(0.4,6,0,0)
-autoTPDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
-autoTPDropdown.TextColor3 = Color3.fromRGB(240,240,240)
-autoTPDropdown.Font = Enum.Font.Gotham
-autoTPDropdown.TextSize = 13
-autoTPDropdown.Text = "(Pilih musuh)"
-Instance.new("UICorner", autoTPDropdown).CornerRadius = UDim.new(0,6)
+-- UI: Dropdown untuk memilih target musuh AutoTP (ditempatkan setelah Content dibuat)
+-- Penempatan di sini agar Content sudah ada
+do
+    local autoTPDropdownFrame = Instance.new("Frame", Content)
+    autoTPDropdownFrame.Size = UDim2.new(1,0,0,32)
+    autoTPDropdownFrame.BackgroundTransparency = 1
+    local autoTPDropdownLabel = Instance.new("TextLabel", autoTPDropdownFrame)
+    autoTPDropdownLabel.Size = UDim2.new(0.4,0,1,0)
+    autoTPDropdownLabel.BackgroundTransparency = 1
+    autoTPDropdownLabel.Font = Enum.Font.Gotham
+    autoTPDropdownLabel.TextSize = 13
+    autoTPDropdownLabel.TextColor3 = Color3.fromRGB(230,230,230)
+    autoTPDropdownLabel.Text = "AutoTP Target:"
+    autoTPDropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-local function refreshAutoTPDropdown()
-    local enemies = getEnemyPlayers()
-    if #enemies == 0 then
-        autoTPDropdown.Text = "(Tidak ada musuh)"
-        FEATURE.AutoTP_Target = nil
-        return
+    local autoTPDropdown = Instance.new("TextButton", autoTPDropdownFrame)
+    autoTPDropdown.Size = UDim2.new(0.6,-6,1,0)
+    autoTPDropdown.Position = UDim2.new(0.4,6,0,0)
+    autoTPDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
+    autoTPDropdown.TextColor3 = Color3.fromRGB(240,240,240)
+    autoTPDropdown.Font = Enum.Font.Gotham
+    autoTPDropdown.TextSize = 13
+    autoTPDropdown.Text = "(Pilih musuh)"
+    Instance.new("UICorner", autoTPDropdown).CornerRadius = UDim.new(0,6)
+
+    local function refreshAutoTPDropdown()
+        local enemies = getEnemyPlayers()
+        if #enemies == 0 then
+            autoTPDropdown.Text = "(Tidak ada musuh)"
+            FEATURE.AutoTP_Target = nil
+            return
+        end
+        if not FEATURE.AutoTP_Target or not table.find(enemies, FEATURE.AutoTP_Target) then
+            FEATURE.AutoTP_Target = enemies[1]
+        end
+        autoTPDropdown.Text = FEATURE.AutoTP_Target and FEATURE.AutoTP_Target.Name or "(Pilih musuh)"
     end
-    if not FEATURE.AutoTP_Target or not table.find(enemies, FEATURE.AutoTP_Target) then
-        FEATURE.AutoTP_Target = enemies[1]
-    end
-    autoTPDropdown.Text = FEATURE.AutoTP_Target and FEATURE.AutoTP_Target.Name or "(Pilih musuh)"
+
+    autoTPDropdown.MouseButton1Click:Connect(function()
+        local enemies = getEnemyPlayers()
+        if #enemies == 0 then return end
+        local idx = table.find(enemies, FEATURE.AutoTP_Target) or 1
+        idx = idx + 1
+        if idx > #enemies then idx = 1 end
+        FEATURE.AutoTP_Target = enemies[idx]
+        autoTPDropdown.Text = FEATURE.AutoTP_Target and FEATURE.AutoTP_Target.Name or "(Pilih musuh)"
+    end)
+
+    Players.PlayerAdded:Connect(function()
+        task.wait(0.2)
+        refreshAutoTPDropdown()
+    end)
+    Players.PlayerRemoving:Connect(function()
+        task.wait(0.2)
+        refreshAutoTPDropdown()
+    end)
+    refreshAutoTPDropdown()
 end
-
-autoTPDropdown.MouseButton1Click:Connect(function()
-    local enemies = getEnemyPlayers()
-    if #enemies == 0 then return end
-    local idx = table.find(enemies, FEATURE.AutoTP_Target) or 1
-    idx = idx + 1
-    if idx > #enemies then idx = 1 end
-    FEATURE.AutoTP_Target = enemies[idx]
-    autoTPDropdown.Text = FEATURE.AutoTP_Target and FEATURE.AutoTP_Target.Name or "(Pilih musuh)"
-end)
-
-Players.PlayerAdded:Connect(function()
-    task.wait(0.2)
-    refreshAutoTPDropdown()
-end)
-Players.PlayerRemoving:Connect(function()
-    task.wait(0.2)
-    refreshAutoTPDropdown()
-end)
-refreshAutoTPDropdown()
 
 local WALK_UPDATE_INTERVAL = 0.12
 
