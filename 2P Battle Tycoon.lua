@@ -1,8 +1,3 @@
-Baik, saya akan mengintegrasikan fitur AutoTP langsung ke dalam skrip Lua yang Anda berikan.
-
-Berikut adalah skrip lengkap dengan fitur AutoTP yang sudah ditambahkan:
-
-```lua
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
@@ -1232,4 +1227,3 @@ if _G then
 end
 
 print("Script Loaded")
-```
