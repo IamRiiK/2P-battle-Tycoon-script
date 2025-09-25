@@ -29,6 +29,7 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
+    TPShot = false,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -104,23 +105,6 @@ local function keepPersistent(conn)
     end
     return conn
 end
-
-local function getEnemyPlayers()
-    local enemies = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local okTarget = true
-            if LocalPlayer.Team and p.Team then
-                okTarget = (LocalPlayer.Team ~= p.Team)
-            end
-            if okTarget and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                table.insert(enemies, p)
-            end
-        end
-    end
-    return enemies
-end
-
 
 local function addPerPlayerConnection(p, conn)
     if not p or not conn then return conn end
@@ -669,6 +653,45 @@ local function getPredictedPosition(part)
             break
         end
     end
+
+local tpShotCooldown = false
+
+local function doTPShot(targetPlayer)
+    if not targetPlayer or not targetPlayer.Character then return end
+    if targetPlayer == LocalPlayer then return end
+    if LocalPlayer.Team and targetPlayer.Team and LocalPlayer.Team == targetPlayer.Team then return end
+
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not root or not targetRoot then return end
+    if tpShotCooldown then return end
+
+    tpShotCooldown = true
+    local originalCFrame = root.CFrame
+
+    -- teleport ke target
+    root.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
+
+    -- simulasi tembakan (mouse click)
+    -- bisa diganti sesuai kebutuhan, contoh menggunakan VirtualInputManager
+    if VIM then
+        pcall(function()
+            VIM:SendMouseButtonEvent(0,0,true,game)
+            VIM:SendMouseButtonEvent(0,0,false,game)
+        end)
+    end
+
+    -- kembali ke posisi semula setelah delay
+    task.spawn(function()
+        task.wait(0.08) -- delay 0.05-0.12 detik agar terasa natural
+        if root then
+            root.CFrame = originalCFrame
+        end
+        tpShotCooldown = false
+    end)
+end
+
+    
     local basePos = part.Position
     if not FEATURE.PredictiveAim or not owner then return basePos end
     local rec = playerMotion[owner]
@@ -725,6 +748,20 @@ keepPersistent(RunService.RenderStepped:Connect(function()
         end
     end
 
+if FEATURE.TPShot and bestHead then
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local okTarget = false
+            if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) else okTarget = true end
+            if okTarget and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                doTPShot(p)
+                break
+            end
+        end
+    end
+end
+
+            
     if bestHead then
         local success, err = pcall(function()
             local dir = (bestHead - Camera.CFrame.Position)
@@ -828,54 +865,6 @@ local function createTeleportButtonsForTeam(team)
     clearTeleportButtons()
     local places = TELEPORT_COORDS[team]
     if not places then return end
-
-local tpShotButtons = {}
-
-local function clearTPShotButtons()
-    for _, b in ipairs(tpShotButtons) do
-        if b and b.Parent then b:Destroy() end
-    end
-    tpShotButtons = {}
-end
-
-local function createTPShotButtons()
-    clearTPShotButtons()
-    local enemies = getEnemyPlayers()
-    if #enemies == 0 then return end
-
-    local sep = createSeparator(teleportContainer, "TPShot Enemies")
-    table.insert(tpShotButtons, sep)
-
-    for _, enemy in ipairs(enemies) do
-        local btn = Instance.new("TextButton", teleportContainer)
-        btn.Size = UDim2.new(1,0,0,30)
-        btn.BackgroundColor3 = Color3.fromRGB(150,40,40)
-        btn.TextColor3 = Color3.fromRGB(235,235,235)
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 13
-        btn.Text = enemy.Name
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-
-        btn.MouseButton1Click:Connect(function()
-            if not FEATURE.TPShot then return end
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local targetRoot = enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart")
-            if root and targetRoot then
-                -- teleport ke musuh
-                root.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0,3,0))
-                -- tembak musuh (langsung klik mouse)
-                if VIM then
-                    VIM:SendMouseButtonEvent(0,0,0,true,game,0)
-                    VIM:SendMouseButtonEvent(0,0,0,false,game,0)
-                end
-            end
-        end)
-
-        table.insert(tpShotButtons, btn)
-    end
-end
-
     
     local sep = createSeparator(teleportContainer, "Teleport: " .. team)
     table.insert(activeTeleportButtons, sep)
@@ -1031,13 +1020,11 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
         restoreWalkSpeedForCharacter(LocalPlayer.Character)
     end
 end)
-
-FEATURE.TPShot = false
 registerToggle("TPShot", "TPShot", function(state)
     updateHUD("TPShot", state)
+    updateHUD("TPShot", FEATURE.TPShot)
+
 end)
-hudAdd("TPShot")
-updateHUD("TPShot", FEATURE.TPShot)
 
 
 for k,_ in pairs(FEATURE) do
@@ -1056,7 +1043,8 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then ToggleCallbacks.ESP(not FEATURE.ESP)
     elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
     elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
+    elseif input.KeyCode == Enum.KeyCode.T and ToggleCallbacks.TPShot then ToggleCallbacks.TPShot(not FEATURE.TPShot)end
 end))
 
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
@@ -1069,37 +1057,10 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     if FEATURE.WalkEnabled then
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and OriginalWalkByCharacter[LocalPlayer.Character] == nil then 
-                OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed 
-            end
+            if hum and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
     end
-
-    if FEATURE.TPShot then
-        createTPShotButtons()
-    else
-        clearTPShotButtons()
-    end
-
-    if FEATURE.ESP then
-        task.wait(0.2)
-        for _, p in ipairs(Players:GetPlayers()) do 
-            if p ~= LocalPlayer then refreshESPForPlayer(p) end 
-        end
-    end
-end))
-
-
-keepPersistent(RunService.RenderStepped:Connect(function()
-    if FEATURE.TPShot then
-        createTPShotButtons()
-    else
-        clearTPShotButtons()
-    end
-end))
-
-    
     if FEATURE.ESP then
         task.wait(0.2)
         for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then refreshESPForPlayer(p) end end
@@ -1122,4 +1083,5 @@ if _G then
         espObjects = {}
     end
 end
+
 print("Script Loaded")
