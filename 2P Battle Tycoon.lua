@@ -102,6 +102,20 @@ local TELEPORT_COORDS = {
 local PersistentConnections = {}
 local PerPlayerConnections = {}
 
+local function setupAutoTP(tool)
+    tool.Activated:Connect(function()
+        if FEATURE.AutoTPShot and SelectedTarget and SelectedTarget.Character and SelectedTarget.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local targetHRP = SelectedTarget.Character.HumanoidRootPart
+            if hrp and targetHRP then
+                -- Offset di belakang target
+                hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-2)
+            end
+        end
+    end)
+end
+
+
 local function keepPersistent(conn)
     if conn and conn.Disconnect then
         table.insert(PersistentConnections, conn)
