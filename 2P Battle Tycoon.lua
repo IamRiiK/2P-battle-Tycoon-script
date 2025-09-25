@@ -26,9 +26,9 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false,
-    PredictiveAim = true,
-    ProjectileSpeed = 300,
-    PredictionLimit = 1.5,
+    PredictiveAim = false,
+    ProjectileSpeed = 100,
+    PredictionLimit = 0.5,
     AutoTP = false
 
 }
@@ -347,7 +347,7 @@ hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
 hudAdd("PredictiveAim")
-hudAdd("Auto TP Shot")
+hudAdd("Auto TP")
 
 
 local function updateHUD(name, state)
@@ -894,7 +894,7 @@ end)
 
 local autoTPThread = nil
 local autoTPStop = false
-local OFFSET = -1.5
+local OFFSET = -3
 
 local function startAutoTP()
     if autoTPThread then return end
@@ -1032,7 +1032,7 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 
-registerToggle("Auto TP Shot", "AutoTP", function(state)
+registerToggle("AutoTP", function(state)
     if state then
         startAutoTP()
     else
