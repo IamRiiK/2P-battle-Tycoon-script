@@ -29,7 +29,6 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
-    TPShot = false,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -653,46 +652,7 @@ local function getPredictedPosition(part)
             break
         end
     end
-
-local tpShotCooldown = false
-
-local function doTPShot(targetPlayer)
-    if not targetPlayer or not targetPlayer.Character then return end
-    if targetPlayer == LocalPlayer then return end
-    if LocalPlayer.Team and targetPlayer.Team and LocalPlayer.Team == targetPlayer.Team then return end
-
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not root or not targetRoot then return end
-    if tpShotCooldown then return end
-
-    tpShotCooldown = true
-    local originalCFrame = root.CFrame
-
-    -- teleport ke target
-    root.CFrame = targetRoot.CFrame + Vector3.new(0, 3, 0)
-
-    -- simulasi tembakan (mouse click)
-    -- bisa diganti sesuai kebutuhan, contoh menggunakan VirtualInputManager
-    if VIM then
-        pcall(function()
-            VIM:SendMouseButtonEvent(0,0,true,game)
-            VIM:SendMouseButtonEvent(0,0,false,game)
-        end)
-    end
-
-    -- kembali ke posisi semula setelah delay
-    task.spawn(function()
-        task.wait(0.08) -- delay 0.05-0.12 detik agar terasa natural
-        if root then
-            root.CFrame = originalCFrame
-        end
-        tpShotCooldown = false
-    end)
-end
-
-    
-        local basePos = part.Position
+    local basePos = part.Position
     if not FEATURE.PredictiveAim or not owner then return basePos end
     local rec = playerMotion[owner]
     local vel = rec and rec.vel or Vector3.new(0,0,0)
@@ -747,15 +707,6 @@ keepPersistent(RunService.RenderStepped:Connect(function()
             end
         end
     end
-
-if FEATURE.TPShot and bestHead then
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Character and rootPartOfCharacter(p.Character) == bestHead then
-            doTPShot(p)
-            break
-        end
-    end
-end
 
     if bestHead then
         local success, err = pcall(function()
@@ -1015,10 +966,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
         restoreWalkSpeedForCharacter(LocalPlayer.Character)
     end
 end)
-registerToggle("TPShot", "TPShot", function(state)
-    updateHUD("TPShot", state)
-end)
-
 
 for k,_ in pairs(FEATURE) do
     local display = nil
@@ -1036,8 +983,7 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then ToggleCallbacks.ESP(not FEATURE.ESP)
     elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
     elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
-    elseif input.KeyCode == Enum.KeyCode.T and ToggleCallbacks.TPShot then ToggleCallbacks.TPShot(not FEATURE.TPShot)end
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
 end))
 
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
@@ -1076,5 +1022,4 @@ if _G then
         espObjects = {}
     end
 end
-
 print("Script Loaded")
