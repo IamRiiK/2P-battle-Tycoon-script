@@ -271,6 +271,142 @@ autoTP_ToggleBtn.MouseButton1Click:Connect(function()
     end
 end)
 
+-- === LOGIKA ESP ===
+local espObjects = setmetatable({}, { __mode = "k" })
+local function clearESPForPlayer(p)
+    if not p then return end
+    local list = espObjects[p]
+    if list then
+        for _, v in pairs(list) do
+            if v and v.Parent then pcall(function() v:Destroy() end) end
+        end
+        espObjects[p] = nil
+    end
+end
+local function getESPColor(p)
+    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then return Color3.fromRGB(0,200,0) else return Color3.fromRGB(200,40,40) end
+end
+local function createESPForPlayer(p)
+    if not p or not FEATURE.ESP then return end
+    if espObjects[p] then return end
+    local char = p.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return end
+    local hl = Instance.new("Highlight")
+    hl.Name = "TPB_BoxESP"
+    hl.Adornee = char
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.OutlineTransparency = 0
+    hl.OutlineColor = Color3.fromRGB(255,255,255)
+    hl.FillTransparency = 0.7
+    hl.FillColor = getESPColor(p)
+    hl.Parent = char
+    espObjects[p] = { hl }
+end
+local function refreshESP()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if FEATURE.ESP then createESPForPlayer(p) else clearESPForPlayer(p) end
+        end
+    end
+end
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        wait(0.2)
+        refreshESP()
+    end)
+end)
+Players.PlayerRemoving:Connect(function(p)
+    clearESPForPlayer(p)
+end)
+RunService.RenderStepped:Connect(refreshESP)
+
+-- === LOGIKA AUTO PRESS E ===
+local VIM = nil
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
+local autoEThread = nil
+local function startAutoE()
+    if autoEThread then return end
+    autoEThread = task.spawn(function()
+        while FEATURE.AutoE do
+            if VIM then
+                VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+            end
+            task.wait(FEATURE.AutoEInterval or 0.5)
+        end
+        autoEThread = nil
+    end)
+end
+local function stopAutoE()
+    FEATURE.AutoE = false
+end
+-- Toggle handler
+registerToggle("Auto Press E", "AutoE", function(state)
+    if state then startAutoE() else stopAutoE() end
+end)
+
+-- === LOGIKA WALKSPEED ===
+local OriginalWalkByCharacter = {}
+local function setPlayerWalkSpeedForCharacter(char, value)
+    if not char then return end
+    pcall(function()
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if OriginalWalkByCharacter[char] == nil then OriginalWalkByCharacter[char] = hum.WalkSpeed end
+            if hum.WalkSpeed ~= value then hum.WalkSpeed = value end
+        end
+    end)
+end
+RunService.Heartbeat:Connect(function()
+    if not FEATURE.WalkEnabled then return end
+    local char = LocalPlayer.Character
+    if char then setPlayerWalkSpeedForCharacter(char, FEATURE.WalkValue) end
+end)
+
+-- === LOGIKA AUTO TELEPORT ===
+local autoTP_Thread = nil
+local function startAutoTP()
+    if autoTP_Thread then return end
+    autoTP_Thread = task.spawn(function()
+        while autoTP_Enabled and autoTP_SelectedEnemy and autoTP_SelectedEnemy.Character and autoTP_SelectedEnemy.Character:FindFirstChild("HumanoidRootPart") do
+            local myChar = LocalPlayer.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                local originalCF = myRoot.CFrame
+                local enemyRoot = autoTP_SelectedEnemy.Character:FindFirstChild("HumanoidRootPart")
+                if enemyRoot then
+                    myRoot.CFrame = enemyRoot.CFrame + Vector3.new(0,2,0)
+                    task.wait(0.25)
+                    myRoot.CFrame = originalCF
+                    task.wait(0.25)
+                else
+                    break
+                end
+            else
+                break
+            end
+        end
+        autoTP_Thread = nil
+    end)
+end
+local function stopAutoTP()
+    autoTP_Enabled = false
+    autoTP_Thread = nil
+end
+autoTP_ToggleBtn.MouseButton1Click:Connect(function()
+    autoTP_Enabled = not autoTP_Enabled
+    autoTP_ToggleBtn.Text = "Auto Teleport ["..(autoTP_Enabled and "ON" or "OFF").."] (T)"
+    autoTP_ToggleBtn.BackgroundColor3 = autoTP_Enabled and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+    if autoTP_Enabled and autoTP_SelectedEnemy then
+        startAutoTP()
+    else
+        stopAutoTP()
+    end
+end)
+
+-- Hotkey T tetap
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if UIS:GetFocusedTextBox() then return end
@@ -279,4 +415,4 @@ UIS.InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("Script Loaded - Versi Final")
+print("Script Loaded - Versi Final Fungsional")
