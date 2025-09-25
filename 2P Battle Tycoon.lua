@@ -1022,8 +1022,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
 end)
 registerToggle("TPShot", "TPShot", function(state)
     updateHUD("TPShot", state)
-    updateHUD("TPShot", FEATURE.TPShot)
-
 end)
 
 
