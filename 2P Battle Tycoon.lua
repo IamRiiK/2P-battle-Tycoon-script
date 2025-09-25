@@ -102,20 +102,6 @@ local TELEPORT_COORDS = {
 local PersistentConnections = {}
 local PerPlayerConnections = {}
 
-LocalPlayer.Character.ChildAdded:Connect(function(child)
-    if child:IsA("Tool") then
-        setupAutoTP(child)
-    end
-end)
-
-for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
-    if tool:IsA("Tool") then
-        setupAutoTP(tool)
-    end
-end
-
-
-
 local function keepPersistent(conn)
     if conn and conn.Disconnect then
         table.insert(PersistentConnections, conn)
@@ -696,20 +682,6 @@ local function getPredictedPosition(part)
     return basePos + vel * t
 end
 
-local function setupAutoTP(tool)
-    tool.Activated:Connect(function()
-        if FEATURE.AutoTPShot and SelectedTarget and SelectedTarget.Character and SelectedTarget.Character:FindFirstChild("HumanoidRootPart") then
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local targetHRP = SelectedTarget.Character.HumanoidRootPart
-            if hrp and targetHRP then
-                -- Offset di belakang target (misal -2 stud di arah LookVector target)
-                hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-2)
-            end
-        end
-    end)
-end
-
-
 keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
@@ -922,7 +894,7 @@ end)
 
 local autoTPThread = nil
 local autoTPStop = false
-local OFFSET = 1 -- jarak offset auto TP
+local OFFSET = -1.5
 
 local function startAutoTP()
     if autoTPThread then return end
@@ -1068,12 +1040,6 @@ registerToggle("Auto TP Shot", "AutoTP", function(state)
     end
 end)
 
-registerToggle("Auto TP Shot", "AutoTPShot", function(state)
-    -- optional callback kalau mau log
-    print("Auto TP Shot:", state)
-end)
-
-
 local playerDropdown = Instance.new("TextButton", Content)
 playerDropdown.Size = UDim2.new(1,0,0,32)
 playerDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
@@ -1115,7 +1081,8 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then ToggleCallbacks.ESP(not FEATURE.ESP)
     elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
     elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) 
+    elseif input.KeyCode == Enum.KeyCode.T and ToggleCallbacks.AutoTP then ToggleCallbacks.AutoTP(not FEATURE.AutoTP)end
 end))
 
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
