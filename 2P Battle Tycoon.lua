@@ -1,3 +1,4 @@
+-- Paste this entire file into your script (replaces older version)
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
@@ -30,11 +31,11 @@ local FEATURE = {
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
 
-    -- New FakeBring feature
-    FakeBring = false,            -- master toggle
-    FakeBringTarget = nil,        -- Player object
-    FakeBringDistance = 10,       -- distance in studs in front of camera
-    FakeBringYOffset = -1.5,      -- vertical offset to place model slightly lower
+    -- FakeBring
+    FakeBring = false,
+    FakeBringTarget = nil,
+    FakeBringDistance = 10,
+    FakeBringYOffset = -1.5,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -167,7 +168,9 @@ local function clamp(v, a, b)
 end
 
 pcall(function()
-    if _G and _G.__TPB_CLEANUP then pcall(_G.__TPB_CLEANUP) end
+    if _G and _G.__TPB_CLEANUP then
+        pcall(_G.__TPB_CLEANUP)
+    end
     local old = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
     if old then old:Destroy() end
     local old2 = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
@@ -409,7 +412,6 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
--- WalkSpeed UI
 do
     local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,36)
@@ -650,6 +652,7 @@ local function updatePlayerMotion(p, root)
     end
 end
 
+-- original getPredictedPosition (kept as local as in your original)
 local function getPredictedPosition(part)
     if not part then return nil end
     local owner = nil
@@ -694,7 +697,6 @@ keepPersistent(RunService.RenderStepped:Connect(function()
             if okTarget and p.Character then
                 local hum = p.Character:FindFirstChildOfClass("Humanoid")
                 if not hum or hum.Health <= 0 then
-                    
                 else
                     local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
                     if head then
@@ -735,9 +737,7 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- START OF FAKEBRING IMPLEMENTATION
-
--- Table to hold fake models and metadata per player
+-- START FAKEBRING
 local FakeBringData = {}
 
 local function createProxyForCharacter(sourceChar)
@@ -748,27 +748,33 @@ local function createProxyForCharacter(sourceChar)
     local proxyModel = Instance.new("Model")
     proxyModel.Name = "_TPB_FakeBringProxy"
 
-    -- store parts mapping and offsets relative to source root
     local parts = {}
     for _, obj in ipairs(sourceChar:GetDescendants()) do
         if obj:IsA("BasePart") then
-            local p = Instance.new("Part")
-            p.Name = obj.Name
-            p.Size = obj.Size
-            p.Anchored = true
-            p.CanCollide = false
-            p.Transparency = math.clamp(obj.Transparency * 0.6, 0, 0.9)
-            p.Material = obj.Material
-            p.Color = obj.Color
-            p.CastShadow = false
-            p.Parent = proxyModel
-
-            local rel = root.CFrame:ToObjectSpace(obj.CFrame)
-            parts[#parts + 1] = { srcName = obj:GetFullName(), part = p, offset = rel }
+            local status, p = pcall(function()
+                local newp = Instance.new("Part")
+                newp.Name = obj.Name
+                newp.Size = obj.Size
+                newp.Anchored = true
+                newp.CanCollide = false
+                newp.Transparency = math.clamp(obj.Transparency * 0.6, 0, 0.9)
+                newp.Material = obj.Material
+                newp.Color = obj.Color
+                newp.CastShadow = false
+                newp.Parent = proxyModel
+                return newp
+            end)
+            if status and p then
+                local ok, rel = pcall(function() return root.CFrame:ToObjectSpace(obj.CFrame) end)
+                if ok and rel then
+                    parts[#parts + 1] = { srcName = obj:GetFullName(), part = p, offset = rel }
+                else
+                    parts[#parts + 1] = { srcName = obj:GetFullName(), part = p, offset = CFrame.new() }
+                end
+            end
         end
     end
 
-    -- minimal humanoid to mimic animations (optional)
     local hum = Instance.new("Humanoid")
     hum.Name = "FakeHumanoid"
     hum.Parent = proxyModel
@@ -787,46 +793,7 @@ end
 
 local fakeBringRenderConn = nil
 
-local function enableFakeBringForPlayer(p)
-    if not p or p == LocalPlayer then return end
-    disableFakeBring() -- ensure only one target at a time as requested
-
-    local char = p.Character
-    if not char then return end
-
-    local proxy = createProxyForCharacter(char)
-    if not proxy then return end
-
-    FakeBringData[p] = proxy
-    FEATURE.FakeBringTarget = p
-
-    -- render loop to keep proxy in front of camera and match relative offsets
-    fakeBringRenderConn = keepPersistent(RunService.RenderStepped:Connect(function()
-        if not FEATURE.FakeBring or not FEATURE.FakeBringTarget then return end
-        safeWaitCamera()
-        if not Camera or not Camera.CFrame then return end
-        local dist = FEATURE.FakeBringDistance
-        local baseCFrame = Camera.CFrame * CFrame.new(0, FEATURE.FakeBringYOffset, -dist)
-
-        local rec = FakeBringData[FEATURE.FakeBringTarget]
-        if not rec or not rec.model then
-            FEATURE.FakeBring = false
-            FEATURE.FakeBringTarget = nil
-            return
-        end
-
-        -- place each proxy part according to stored offset
-        for _, info in ipairs(rec.parts) do
-            local targetCFrame = baseCFrame * info.offset
-            if info.part and info.part.Parent then
-                info.part.CFrame = targetCFrame
-                if info.part.Transparency >= 1 then info.part.Transparency = 0.9 end
-            end
-        end
-    end))
-end
-
-function disableFakeBring()
+local function disableFakeBring()
     FEATURE.FakeBring = false
     local targ = FEATURE.FakeBringTarget
     FEATURE.FakeBringTarget = nil
@@ -840,7 +807,39 @@ function disableFakeBring()
     end
 end
 
--- utility to toggle fake bring with a player
+local function enableFakeBringForPlayer(p)
+    if not p or p == LocalPlayer then return end
+    disableFakeBring()
+    local char = p.Character
+    if not char then return end
+    local proxy = createProxyForCharacter(char)
+    if not proxy then return end
+    FakeBringData[p] = proxy
+    FEATURE.FakeBringTarget = p
+
+    fakeBringRenderConn = keepPersistent(RunService.RenderStepped:Connect(function()
+        if not FEATURE.FakeBring or not FEATURE.FakeBringTarget then return end
+        safeWaitCamera()
+        if not Camera or not Camera.CFrame then return end
+        local dist = FEATURE.FakeBringDistance
+        local baseCFrame = Camera.CFrame * CFrame.new(0, FEATURE.FakeBringYOffset, -dist)
+
+        local rec = FakeBringData[FEATURE.FakeBringTarget]
+        if not rec or not rec.model then
+            disableFakeBring()
+            return
+        end
+
+        for _, info in ipairs(rec.parts) do
+            local ok, targetCFrame = pcall(function() return baseCFrame * info.offset end)
+            if ok and targetCFrame and info.part and info.part.Parent then
+                info.part.CFrame = targetCFrame
+                if info.part.Transparency >= 1 then info.part.Transparency = 0.9 end
+            end
+        end
+    end))
+end
+
 local function setFakeBringTarget(p)
     if not p or p == LocalPlayer then return end
     if FEATURE.FakeBring and FEATURE.FakeBringTarget == p then
@@ -851,7 +850,6 @@ local function setFakeBringTarget(p)
     enableFakeBringForPlayer(p)
 end
 
--- ensure proxies cleaned when player leaves or dies
 Players.PlayerRemoving:Connect(function(p)
     if FakeBringData[p] then
         destroyProxy(FakeBringData[p])
@@ -862,8 +860,8 @@ Players.PlayerRemoving:Connect(function(p)
     end
 end)
 
--- Modify aimbot prediction/getting head positions to use proxy if active
-local original_getPredictedPosition = getPredictedPosition
+-- safe original_getPredictedPosition fallback
+local original_getPredictedPosition = getPredictedPosition or function(part) return (part and part.Position) or nil end
 getPredictedPosition = function(part)
     if FEATURE.FakeBring and FEATURE.FakeBringTarget and FakeBringData[FEATURE.FakeBringTarget] then
         local proxy = FakeBringData[FEATURE.FakeBringTarget]
@@ -880,8 +878,7 @@ getPredictedPosition = function(part)
     end
     return original_getPredictedPosition(part)
 end
-
--- END OF FAKEBRING IMPLEMENTATION
+-- END FAKEBRING
 
 local teleportContainer = Instance.new("ScrollingFrame", Content)
 teleportContainer.Size = UDim2.new(1,0,0,160)
@@ -1256,25 +1253,18 @@ local function buildPlayerListUI(parentFrame)
     return container
 end
 
--- Attach the FakeBring UI to the main Content frame
-buildPlayerListUI(Content)
+-- wrap building the UI in pcall to prevent crash
+local ok, err = pcall(function() buildPlayerListUI(Content) end)
+if not ok then
+    warn("Failed to build FakeBring UI:", tostring(err))
+end
 
 if _G then
+    local prev_cleanup = _G.__TPB_CLEANUP
     _G.__TPB_CLEANUP = function()
-        for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
-        pcall(function()
-            local g = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
-            if g then g:Destroy() end
-            local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
-            if gh then gh:Destroy() end
-        end)
-        restoreAllWalkSpeeds()
-        stopAutoE()
-        clearAllConnections()
-        playerMotion = {}
-        espObjects = {}
+        if prev_cleanup then pcall(prev_cleanup) end
         disableFakeBring()
     end
 end
 
-print("Script Loaded with FakeBring feature")
+print("Script Loaded with FakeBring (robust mode)")
