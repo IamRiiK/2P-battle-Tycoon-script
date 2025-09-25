@@ -29,8 +29,6 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
-    TeleportEnemy = false
-
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -566,44 +564,6 @@ local function startAutoE()
         end
         autoEThread = nil
     end)
-
-local teleportEnemyThread = nil
-local teleportEnemyStop = false
-
-local function startTeleportEnemy()
-    if teleportEnemyThread then return end
-    teleportEnemyStop = false
-    teleportEnemyThread = task.spawn(function()
-        while FEATURE.TeleportEnemy and not teleportEnemyStop do
-            pcall(function()
-                local char = LocalPlayer.Character
-                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-                local originalPos = char.HumanoidRootPart.Position
-
-                for _, enemy in pairs(Players:GetPlayers()) do
-                    if enemy ~= LocalPlayer and enemy.Character and enemy.Character:FindFirstChild("HumanoidRootPart") then
-                        local enemyPos = enemy.Character.HumanoidRootPart.Position
-
-                        -- Teleport ke musuh
-                        char.HumanoidRootPart.CFrame = CFrame.new(enemyPos + Vector3.new(0,3,0))
-                        task.wait(0.25)
-                        -- Kembali ke posisi semula
-                        char.HumanoidRootPart.CFrame = CFrame.new(originalPos)
-                        task.wait(0.25)
-                    end
-                end
-            end)
-            task.wait(0.05)
-        end
-        teleportEnemyThread = nil
-    end)
-end
-
-local function stopTeleportEnemy()
-    FEATURE.TeleportEnemy = false
-    teleportEnemyStop = true
-end
-
     updateHUD("Auto Press E", true)
 end
 
@@ -1001,13 +961,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
             if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
-registerToggle("Teleport Enemy", "TeleportEnemy", function(state)
-    if state then
-        startTeleportEnemy()
-    else
-        stopTeleportEnemy()
-    end
-end)
         updateHUD("WalkSpeed", true)
     else
         restoreWalkSpeedForCharacter(LocalPlayer.Character)
