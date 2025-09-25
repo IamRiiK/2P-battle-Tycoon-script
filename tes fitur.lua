@@ -329,6 +329,7 @@ local autoEThread = nil
 local function startAutoE()
     if autoEThread then return end
     autoEThread = task.spawn(function()
+        print("[DEBUG] Auto Press E started")
         while FEATURE.AutoE do
             if VIM then
                 VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
@@ -336,16 +337,13 @@ local function startAutoE()
             end
             task.wait(FEATURE.AutoEInterval or 0.5)
         end
+        print("[DEBUG] Auto Press E stopped")
         autoEThread = nil
     end)
 end
 local function stopAutoE()
     FEATURE.AutoE = false
 end
--- Toggle handler
-registerToggle("Auto Press E", "AutoE", function(state)
-    if state then startAutoE() else stopAutoE() end
-end)
 
 -- === LOGIKA WALKSPEED ===
 local OriginalWalkByCharacter = {}
@@ -370,12 +368,13 @@ local autoTP_Thread = nil
 local function startAutoTP()
     if autoTP_Thread then return end
     autoTP_Thread = task.spawn(function()
-        while autoTP_Enabled and autoTP_SelectedEnemy and autoTP_SelectedEnemy.Character and autoTP_SelectedEnemy.Character:FindFirstChild("HumanoidRootPart") do
+        print("[DEBUG] Auto Teleport started")
+        while _G.autoTP_Enabled and _G.autoTP_SelectedEnemy and _G.autoTP_SelectedEnemy.Character and _G.autoTP_SelectedEnemy.Character:FindFirstChild("HumanoidRootPart") do
             local myChar = LocalPlayer.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if myRoot then
                 local originalCF = myRoot.CFrame
-                local enemyRoot = autoTP_SelectedEnemy.Character:FindFirstChild("HumanoidRootPart")
+                local enemyRoot = _G.autoTP_SelectedEnemy.Character:FindFirstChild("HumanoidRootPart")
                 if enemyRoot then
                     myRoot.CFrame = enemyRoot.CFrame + Vector3.new(0,2,0)
                     task.wait(0.25)
@@ -388,31 +387,82 @@ local function startAutoTP()
                 break
             end
         end
+        print("[DEBUG] Auto Teleport stopped")
         autoTP_Thread = nil
     end)
 end
 local function stopAutoTP()
-    autoTP_Enabled = false
+    _G.autoTP_Enabled = false
     autoTP_Thread = nil
 end
-autoTP_ToggleBtn.MouseButton1Click:Connect(function()
-    autoTP_Enabled = not autoTP_Enabled
-    autoTP_ToggleBtn.Text = "Auto Teleport ["..(autoTP_Enabled and "ON" or "OFF").."] (T)"
-    autoTP_ToggleBtn.BackgroundColor3 = autoTP_Enabled and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
-    if autoTP_Enabled and autoTP_SelectedEnemy then
-        startAutoTP()
-    else
-        stopAutoTP()
-    end
-end)
 
--- Hotkey T tetap
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if UIS:GetFocusedTextBox() then return end
-    if input.KeyCode == Enum.KeyCode.T then
-        autoTP_ToggleBtn:MouseButton1Click()
-    end
-end)
+-- === REFACTOR TOGGLE ===
+local function toggleESP(state)
+    FEATURE.ESP = state
+    refreshESP()
+    print("[DEBUG] ESP toggled:", state)
+end
+local function toggleAutoE(state)
+    FEATURE.AutoE = state
+    if state then startAutoE() else stopAutoE() end
+end
+local function toggleWalkSpeed(state)
+    FEATURE.WalkEnabled = state
+    print("[DEBUG] WalkSpeed toggled:", state)
+end
+local function toggleAutoTP(state)
+    _G.autoTP_Enabled = state
+    if state and _G.autoTP_SelectedEnemy then startAutoTP() else stopAutoTP() end
+    print("[DEBUG] AutoTP toggled:", state)
+end
 
-print("Script Loaded - Versi Final Fungsional")
+-- === RECONNECT UI TO LOGIC ===
+for _, obj in ipairs(Content:GetChildren()) do
+    if obj:IsA("TextButton") then
+        if obj.Text:find("ESP") then
+            obj.MouseButton1Click:Connect(function()
+                toggleESP(not FEATURE.ESP)
+                obj.Text = "ESP ["..(FEATURE.ESP and "ON" or "OFF").."]"
+                obj.BackgroundColor3 = FEATURE.ESP and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+            end)
+        elseif obj.Text:find("Auto Press E") then
+            obj.MouseButton1Click:Connect(function()
+                toggleAutoE(not FEATURE.AutoE)
+                obj.Text = "Auto Press E ["..(FEATURE.AutoE and "ON" or "OFF").."]"
+                obj.BackgroundColor3 = FEATURE.AutoE and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+            end)
+        elseif obj.Text:find("WalkSpeed") then
+            obj.MouseButton1Click:Connect(function()
+                toggleWalkSpeed(not FEATURE.WalkEnabled)
+                obj.Text = "WalkSpeed ["..(FEATURE.WalkEnabled and "ON" or "OFF").."]"
+                obj.BackgroundColor3 = FEATURE.WalkEnabled and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+            end)
+        end
+    end
+end
+
+-- Auto Teleport toggle
+_G.autoTP_Enabled = false
+_G.autoTP_SelectedEnemy = nil
+if autoTP_ToggleBtn then
+    autoTP_ToggleBtn.MouseButton1Click:Connect(function()
+        _G.autoTP_Enabled = not _G.autoTP_Enabled
+        autoTP_ToggleBtn.Text = "Auto Teleport ["..(_G.autoTP_Enabled and "ON" or "OFF").."] (T)"
+        autoTP_ToggleBtn.BackgroundColor3 = _G.autoTP_Enabled and Color3.fromRGB(80,150,220) or Color3.fromRGB(36,36,36)
+        toggleAutoTP(_G.autoTP_Enabled)
+    end)
+end
+
+-- Dropdown musuh
+if autoTP_Dropdown then
+    autoTP_Dropdown.MouseButton1Click:Connect(function()
+        autoTP_RefreshEnemyList()
+        autoTP_ListFrame.ZIndex = 10
+        for _, c in ipairs(autoTP_ListFrame:GetChildren()) do
+            if c:IsA("GuiObject") then c.ZIndex = 11 end
+        end
+        autoTP_ListFrame.Visible = not autoTP_ListFrame.Visible
+    end)
+end
+
+print("Script Loaded - Versi Final Fungsional & Debug")
