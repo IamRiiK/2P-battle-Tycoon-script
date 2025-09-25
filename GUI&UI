@@ -1,0 +1,197 @@
+-- UI/MainGUI.lua
+local MainGUI = {}
+
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+function MainGUI:Create()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "TPB_GUI"
+    screenGui.DisplayOrder = 9999
+    screenGui.IgnoreGuiInset = true
+
+    -- ===== Main Frame =====
+    local mainFrame = Instance.new("Frame", screenGui)
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 380, 0, 600)
+    mainFrame.Position = UDim2.new(0.02,0,0.1,0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(28,28,30)
+    mainFrame.BorderSizePixel = 0
+    local mainCorner = Instance.new("UICorner", mainFrame)
+    mainCorner.CornerRadius = UDim.new(0,12)
+
+    -- ===== Title Bar =====
+    local titleBar = Instance.new("Frame", mainFrame)
+    titleBar.Size = UDim2.new(1,0,0,36)
+    titleBar.BackgroundTransparency = 1
+
+    local titleLabel = Instance.new("TextLabel", titleBar)
+    titleLabel.Size = UDim2.new(1,-80,1,0)
+    titleLabel.Position = UDim2.new(0,12,0,0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 16
+    titleLabel.TextColor3 = Color3.fromRGB(245,245,245)
+    titleLabel.Text = "⚔️ 2P Battle Tycoon"
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    local hideBtn = Instance.new("TextButton", titleBar)
+    hideBtn.Size = UDim2.new(0,36,0,28)
+    hideBtn.Position = UDim2.new(1,-42,0,4)
+    hideBtn.BackgroundColor3 = Color3.fromRGB(58,58,60)
+    hideBtn.Font = Enum.Font.GothamBold
+    hideBtn.TextSize = 18
+    hideBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    hideBtn.Text = "-"
+    local hideCorner = Instance.new("UICorner", hideBtn)
+    hideCorner.CornerRadius = UDim.new(0,6)
+
+    -- ===== Content Area =====
+    local content = Instance.new("Frame", mainFrame)
+    content.Name = "Content"
+    content.Size = UDim2.new(1,-16,1,-56)
+    content.Position = UDim2.new(0,8,0,44)
+    content.BackgroundTransparency = 1
+
+    local listLayout = Instance.new("UIListLayout", content)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0,8)
+
+    -- ===== Helpers =====
+    local function createSection(title)
+        local header = Instance.new("TextLabel", content)
+        header.Size = UDim2.new(1,0,0,24)
+        header.BackgroundTransparency = 1
+        header.Font = Enum.Font.GothamBold
+        header.TextSize = 14
+        header.TextColor3 = Color3.fromRGB(150,150,150)
+        header.Text = title
+        header.TextXAlignment = Enum.TextXAlignment.Left
+        return header
+    end
+
+    local function createToggle(name)
+        local btn = Instance.new("TextButton", content)
+        btn.Size = UDim2.new(1,0,0,32)
+        btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+        btn.TextColor3 = Color3.fromRGB(235,235,235)
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 14
+        btn.Text = name .. " [OFF]"
+        local corner = Instance.new("UICorner", btn)
+        corner.CornerRadius = UDim.new(0,6)
+        return btn
+    end
+
+    local function createTextBox(placeholder)
+        local box = Instance.new("TextBox", content)
+        box.Size = UDim2.new(1,0,0,28)
+        box.BackgroundColor3 = Color3.fromRGB(36,36,36)
+        box.TextColor3 = Color3.fromRGB(240,240,240)
+        box.Font = Enum.Font.Gotham
+        box.TextSize = 13
+        box.PlaceholderText = placeholder
+        local corner = Instance.new("UICorner", box)
+        corner.CornerRadius = UDim.new(0,6)
+        return box
+    end
+
+    local function createScrollingSection(title, itemCount)
+        createSection(title)
+        local scroll = Instance.new("ScrollingFrame", content)
+        scroll.Size = UDim2.new(1,0,0,160)
+        scroll.BackgroundTransparency = 1
+        scroll.ScrollBarThickness = 6
+        scroll.VerticalScrollBarInset = Enum.ScrollBarInset.Always
+
+        local layout = Instance.new("UIListLayout", scroll)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0,6)
+
+        for i=1,itemCount do
+            local btn = Instance.new("TextButton", scroll)
+            btn.Size = UDim2.new(1,0,0,30)
+            btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+            btn.TextColor3 = Color3.fromRGB(235,235,235)
+            btn.Font = Enum.Font.Gotham
+            btn.TextSize = 13
+            btn.Text = title.." "..i
+            local corner = Instance.new("UICorner", btn)
+            corner.CornerRadius = UDim.new(0,6)
+        end
+    end
+
+    -- ===== Example Sections =====
+    createSection("Player Utilities")
+    createToggle("ESP")
+    createToggle("Aimbot")
+    createToggle("WalkSpeed")
+    createTextBox("WalkSpeed (16-200)")
+    createScrollingSection("Teleport Points", 8)
+    createScrollingSection("Shop Items", 5)
+
+    -- ===== Drag Functionality =====
+    local dragging, dragInput, dragStart, startPos
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        mainFrame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = mainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    titleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            update(input)
+        end
+    end)
+
+    -- ===== Hide / Show =====
+    local visible = true
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local hiddenPosition = UDim2.new(mainFrame.Position.X.Scale, mainFrame.Position.X.Offset, -1, 0)
+    local visiblePosition = mainFrame.Position
+
+    local function toggleVisibility()
+        visible = not visible
+        local targetPos = visible and visiblePosition or hiddenPosition
+        TweenService:Create(mainFrame, tweenInfo, {Position = targetPos}):Play()
+    end
+
+    -- Hide button click
+    hideBtn.MouseButton1Click:Connect(toggleVisibility)
+
+    -- LeftAlt key
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == Enum.KeyCode.LeftAlt then
+            toggleVisibility()
+        end
+    end)
+
+    return screenGui, mainFrame
+end
+
+return MainGUI
