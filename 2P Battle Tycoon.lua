@@ -1068,6 +1068,12 @@ registerToggle("Auto TP Shot", "AutoTP", function(state)
     end
 end)
 
+registerToggle("Auto TP Shot", "AutoTPShot", function(state)
+    -- optional callback kalau mau log
+    print("Auto TP Shot:", state)
+end)
+
+
 local playerDropdown = Instance.new("TextButton", Content)
 playerDropdown.Size = UDim2.new(1,0,0,32)
 playerDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
