@@ -1069,10 +1069,27 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
     if FEATURE.WalkEnabled then
         pcall(function()
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
+            if hum and OriginalWalkByCharacter[LocalPlayer.Character] == nil then 
+                OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed 
+            end
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
     end
+
+    if FEATURE.TPShot then
+        createTPShotButtons()
+    else
+        clearTPShotButtons()
+    end
+
+    if FEATURE.ESP then
+        task.wait(0.2)
+        for _, p in ipairs(Players:GetPlayers()) do 
+            if p ~= LocalPlayer then refreshESPForPlayer(p) end 
+        end
+    end
+end))
+
 
 keepPersistent(RunService.RenderStepped:Connect(function()
     if FEATURE.TPShot then
