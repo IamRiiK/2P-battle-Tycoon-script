@@ -29,9 +29,6 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
-    FakeBring = false,
-    TargetPlayer = nil,
-
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -312,50 +309,6 @@ do
     keepPersistent(UIS.InputEnded:Connect(onInputEnded))
 end
 
-local selectFrame = Instance.new("Frame", Content)
-selectFrame.Size = UDim2.new(1,0,0,32)
-selectFrame.BackgroundTransparency = 1
-
-local selectLabel = Instance.new("TextLabel", selectFrame)
-selectLabel.Size = UDim2.new(0.4,0,1,0)
-selectLabel.BackgroundTransparency = 1
-selectLabel.Font = Enum.Font.Gotham
-selectLabel.TextSize = 13
-selectLabel.TextColor3 = Color3.fromRGB(230,230,230)
-selectLabel.Text = "Target Player:"
-selectLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local playerDropdown = Instance.new("TextButton", selectFrame)
-playerDropdown.Size = UDim2.new(0.6,-6,1,0)
-playerDropdown.Position = UDim2.new(0.4,6,0,0)
-playerDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
-playerDropdown.TextColor3 = Color3.fromRGB(240,240,240)
-playerDropdown.Font = Enum.Font.Gotham
-playerDropdown.TextSize = 13
-playerDropdown.Text = "None"
-Instance.new("UICorner", playerDropdown).CornerRadius = UDim.new(0,6)
-
-playerDropdown.MouseButton1Click:Connect(function()
-    local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            table.insert(list, p.Name)
-        end
-    end
-    if #list > 0 then
-        local currentIndex = table.find(list, FEATURE.TargetPlayer) or 0
-        currentIndex = currentIndex + 1
-        if currentIndex > #list then currentIndex = 1 end
-        FEATURE.TargetPlayer = list[currentIndex]
-        playerDropdown.Text = FEATURE.TargetPlayer
-    else
-        FEATURE.TargetPlayer = nil
-        playerDropdown.Text = "None"
-    end
-end)
-
-
-
 local HUDGui = Instance.new("ScreenGui")
 HUDGui.Name = "TPB_TycoonHUD_Final"
 HUDGui.DisplayOrder = 10000
@@ -634,22 +587,6 @@ end
 
 do
     local acc = 0
-    keepPersistent(RunService.Heartbeat:Connect(function()
-         if FEATURE.FakeBring and FEATURE.TargetPlayer then
-        local target = Players:FindFirstChild(FEATURE.TargetPlayer)
-        if target and target.Character and LocalPlayer.Character then
-            local tHRP = target.Character:FindFirstChild("HumanoidRootPart")
-            local lHRP = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if tHRP and lHRP then
-             -- Fake bring ke posisi local player (agak di depan)
-                tHRP.CFrame = lHRP.CFrame * CFrame.new(0,0,-3)
-            end
-        end
-    end
-end))
-
-    do
-        local acc = 0
     keepPersistent(RunService.Heartbeat:Connect(function(dt)
         if not FEATURE.WalkEnabled then return end
         acc = acc + dt
@@ -1029,15 +966,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
         restoreWalkSpeedForCharacter(LocalPlayer.Character)
     end
 end)
-
-registerToggle("Fake Bring Selective", "FakeBring", function(state)
-    if state then
-        updateHUD("Fake Bring Selective", true)
-    else
-        updateHUD("Fake Bring Selective", false)
-    end
-end)
-
 
 for k,_ in pairs(FEATURE) do
     local display = nil
