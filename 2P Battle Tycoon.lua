@@ -29,8 +29,6 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
-    AutoTP = false,
-    AutoTPTarget = nil,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -228,12 +226,15 @@ MinBtn.TextColor3 = Color3.fromRGB(240,240,240)
 MinBtn.Text = "-"
 Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0,6)
 
--- Main Content Frame (akan berisi TabControl)
 local Content = Instance.new("Frame", MainFrame)
 Content.Name = "Content"
 Content.Size = UDim2.new(1,-16,1,-56)
 Content.Position = UDim2.new(0,8,0,44)
 Content.BackgroundTransparency = 1
+
+local listLayout = Instance.new("UIListLayout", Content)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Padding = UDim.new(0,8)
 
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
@@ -342,7 +343,6 @@ hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
 hudAdd("PredictiveAim")
-hudAdd("AutoTP")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -356,10 +356,6 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.LeftAlt then
         MainFrame.Visible = not MainFrame.Visible
         HUD.Visible = not MainFrame.Visible
-        if MainFrame.Visible then
-            -- Refresh daftar musuh saat UI dibuka
-            populateEnemyList()
-        end
     end
 end))
 
@@ -377,8 +373,8 @@ end
 
 local ToggleCallbacks = {}
 local Buttons = {}
-local function registerToggle(displayName, featureKey, parentFrame, onChange) -- Tambahkan parentFrame
-    local btn = Instance.new("TextButton", parentFrame) -- Gunakan parentFrame
+local function registerToggle(displayName, featureKey, onChange)
+    local btn = Instance.new("TextButton", Content)
     btn.Size = UDim2.new(1,0,0,32)
     btn.BackgroundColor3 = Color3.fromRGB(36,36,36)
     btn.TextColor3 = Color3.fromRGB(235,235,235)
@@ -386,7 +382,7 @@ local function registerToggle(displayName, featureKey, parentFrame, onChange) --
     btn.TextSize = 14
     btn.Text = displayName .. " [OFF]"
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-    -- btn.Parent = parentFrame -- Sudah diatur di Instance.new
+    btn.Parent = Content
     local function setState(state)
         local old = FEATURE[featureKey]
         FEATURE[featureKey] = state
@@ -407,175 +403,8 @@ local function registerToggle(displayName, featureKey, parentFrame, onChange) --
     return btn
 end
 
--- ====================================================================================================
--- TAB CONTROL IMPLEMENTATION
--- ====================================================================================================
-
-local TabButtonsFrame = Instance.new("Frame", Content)
-TabButtonsFrame.Name = "TabButtonsFrame"
-TabButtonsFrame.Size = UDim2.new(1,0,0,30)
-TabButtonsFrame.Position = UDim2.new(0,0,0,0)
-TabButtonsFrame.BackgroundTransparency = 1
-
-local TabButtonListLayout = Instance.new("UIListLayout", TabButtonsFrame)
-TabButtonListLayout.FillDirection = Enum.FillDirection.Horizontal
-TabButtonListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-TabButtonListLayout.Padding = UDim.new(0,5)
-TabButtonListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-local TabContentFrame = Instance.new("Frame", Content)
-TabContentFrame.Name = "TabContentFrame"
-TabContentFrame.Size = UDim2.new(1,0,1,-35)
-TabContentFrame.Position = UDim2.new(0,0,0,35)
-TabContentFrame.BackgroundTransparency = 1
-
-local activeTab = nil
-local tabPages = {}
-local tabButtons = {}
-
-local function createTab(name, order)
-    local tabButton = Instance.new("TextButton", TabButtonsFrame)
-    tabButton.Name = name .. "TabButton"
-    tabButton.Size = UDim2.new(0.2,0,1,0) -- Sesuaikan ukuran tab button
-    tabButton.BackgroundColor3 = Color3.fromRGB(45,45,48)
-    tabButton.TextColor3 = Color3.fromRGB(180,180,180)
-    tabButton.Font = Enum.Font.GothamBold
-    tabButton.TextSize = 14
-    tabButton.Text = name
-    tabButton.LayoutOrder = order
-    Instance.new("UICorner", tabButton).CornerRadius = UDim.new(0,6)
-
-    local tabPage = Instance.new("ScrollingFrame", TabContentFrame)
-    tabPage.Name = name .. "TabPage"
-    tabPage.Size = UDim2.new(1,0,1,0)
-    tabPage.BackgroundTransparency = 1
-    tabPage.Visible = false
-    tabPage.CanvasSize = UDim2.new(0,0,0,0)
-    tabPage.ScrollBarThickness = 6
-    tabPage.VerticalScrollBarInset = Enum.ScrollBarInset.Always
-
-    local pageLayout = Instance.new("UIListLayout", tabPage)
-    pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    pageLayout.Padding = UDim.new(0,8)
-
-    pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        tabPage.CanvasSize = UDim2.new(0,0,0, pageLayout.AbsoluteContentSize.Y + 12)
-    end)
-
-    tabPages[name] = tabPage
-    tabButtons[name] = tabButton
-
-    tabButton.MouseButton1Click:Connect(function()
-        if activeTab then
-            tabPages[activeTab].Visible = false
-            tabButtons[activeTab].BackgroundColor3 = Color3.fromRGB(45,45,48)
-            tabButtons[activeTab].TextColor3 = Color3.fromRGB(180,180,180)
-        end
-        tabPage.Visible = true
-        tabButton.BackgroundColor3 = Color3.fromRGB(80,150,220)
-        tabButton.TextColor3 = Color3.fromRGB(245,245,245)
-        activeTab = name
-
-        -- Panggil fungsi refresh khusus untuk tab yang diaktifkan
-        if name == "Teleport" then
-            updateTeleportTeamLabel()
-        elseif name == "AutoTP" then
-            populateEnemyList()
-        end
-    end)
-
-    return tabPage
-end
-
-local combatTab = createTab("Combat", 1)
-local movementTab = createTab("Movement", 2)
-local teleportTab = createTab("Teleport", 3)
-local utilityTab = createTab("Utility", 4)
-local autoTPTab = createTab("AutoTP", 5) -- Tab baru untuk AutoTP
-
--- Aktifkan tab pertama secara default
-tabButtons["Combat"].MouseButton1Click:Fire()
-
--- ====================================================================================================
--- END TAB CONTROL IMPLEMENTATION
--- ====================================================================================================
-
--- ====================================================================================================
--- COMBAT TAB FEATURES
--- ====================================================================================================
-createSeparator(combatTab, "Aimbot Settings")
-
-local aimFrame = Instance.new("Frame", combatTab)
-aimFrame.Size = UDim2.new(1,0,0,72)
-aimFrame.BackgroundTransparency = 1
-local aimLayout = Instance.new("UIListLayout", aimFrame)
-aimLayout.SortOrder = Enum.SortOrder.LayoutOrder
-aimLayout.Padding = UDim.new(0,6)
-
-local row = Instance.new("Frame", aimFrame)
-row.Size = UDim2.new(1,0,0,28)
-row.BackgroundTransparency = 1
-
-local predBtn = Instance.new("TextButton", row)
-predBtn.Size = UDim2.new(0.42,0,1,0)
-predBtn.Position = UDim2.new(0,0,0,0)
-predBtn.BackgroundColor3 = Color3.fromRGB(36,36,36)
-predBtn.Font = Enum.Font.Gotham
-predBtn.TextSize = 13
-predBtn.TextColor3 = Color3.fromRGB(235,235,235)
-predBtn.Text = "Predictive: " .. (FEATURE.PredictiveAim and "ON" or "OFF")
-Instance.new("UICorner", predBtn).CornerRadius = UDim.new(0,6)
-predBtn.MouseButton1Click:Connect(function()
-    FEATURE.PredictiveAim = not FEATURE.PredictiveAim
-    predBtn.Text = "Predictive: " .. (FEATURE.PredictiveAim and "ON" or "OFF")
-    updateHUD("PredictiveAim", FEATURE.PredictiveAim)
-end)
-
-local speedBox = Instance.new("TextBox", row)
-speedBox.Size = UDim2.new(0.28,0,1,0)
-speedBox.Position = UDim2.new(0.44,6,0,0)
-speedBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
-speedBox.TextColor3 = Color3.fromRGB(240,240,240)
-speedBox.Font = Enum.Font.Gotham
-speedBox.TextSize = 13
-speedBox.ClearTextOnFocus = false
-speedBox.Text = tostring(FEATURE.ProjectileSpeed)
-speedBox.PlaceholderText = "Speed"
-Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
-speedBox.FocusLost:Connect(function(enter)
-    if enter then
-        local n = tonumber(speedBox.Text)
-        if n and n >= 10 and n <= 5000 then FEATURE.ProjectileSpeed = n else speedBox.Text = tostring(FEATURE.ProjectileSpeed) end
-    end
-end)
-
-local limitBox = Instance.new("TextBox", row)
-limitBox.Size = UDim2.new(0.28,0,1,0)
-limitBox.Position = UDim2.new(0.72,6,0,0)
-limitBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
-limitBox.TextColor3 = Color3.fromRGB(240,240,240)
-limitBox.Font = Enum.Font.Gotham
-limitBox.TextSize = 13
-limitBox.ClearTextOnFocus = false
-limitBox.Text = tostring(FEATURE.PredictionLimit)
-limitBox.PlaceholderText = "Limit"
-Instance.new("UICorner", limitBox).CornerRadius = UDim.new(0,6)
-limitBox.FocusLost:Connect(function(enter)
-    if enter then
-        local n = tonumber(limitBox.Text)
-        if n and n >= 0.1 and n <= 5 then FEATURE.PredictionLimit = n else limitBox.Text = tostring(FEATURE.PredictionLimit) end
-    end
-end)
-
-registerToggle("Aimbot", "Aimbot", combatTab, function(state) updateHUD("Aimbot", state) end)
-
--- ====================================================================================================
--- MOVEMENT TAB FEATURES
--- ====================================================================================================
-createSeparator(movementTab, "Movement Settings")
-
 do
-    local frame = Instance.new("Frame", movementTab)
+    local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,36)
     frame.BackgroundTransparency = 1
     local label = Instance.new("TextLabel", frame)
@@ -610,26 +439,297 @@ do
         end
     end)
 end
-registerToggle("WalkSpeed", "WalkEnabled", movementTab, function(state)
-    if state then
-        pcall(function()
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
-            if hum then hum.WalkSpeed = FEATURE.WalkValue end
-        end)
-        updateHUD("WalkSpeed", true)
-    else
-        restoreWalkSpeedForCharacter(LocalPlayer.Character)
+
+local espObjects = setmetatable({}, { __mode = "k" })
+local function rootPartOfCharacter(char)
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+end
+local function getESPColor(p)
+    if p.Team and LocalPlayer.Team and p.Team == LocalPlayer.Team then return Color3.fromRGB(0,200,0) else return Color3.fromRGB(200,40,40) end
+end
+local function clearESPForPlayer(p)
+    if not p then return end
+    local list = espObjects[p]
+    if list then
+        for _, v in pairs(list) do
+            if v and v.Parent then pcall(function() v:Destroy() end) end
+        end
+        espObjects[p] = nil
     end
-end)
+end
+local function updateESPColorForPlayer(p)
+    local list = espObjects[p]
+    if list then
+        for _, hl in ipairs(list) do
+            if hl and hl.Parent then hl.FillColor = getESPColor(p) end
+        end
+    end
+end
 
--- ====================================================================================================
--- TELEPORT TAB FEATURES
--- ====================================================================================================
-createSeparator(teleportTab, "Team Teleports")
+local lastRefresh = setmetatable({}, { __mode = "k" })
+local MIN_REFRESH_INTERVAL = 0.12
+local function shouldRefreshForPlayer(p)
+    local t = tick()
+    local last = lastRefresh[p] or 0
+    if t - last < MIN_REFRESH_INTERVAL then return false end
+    lastRefresh[p] = t
+    return true
+end
 
-local teleportContainer = Instance.new("ScrollingFrame", teleportTab)
-teleportContainer.Size = UDim2.new(1,0,0,300) -- Sesuaikan ukuran agar muat di tab
+local function createESPForPlayer(p)
+    if not p then return end
+    if not FEATURE.ESP then return end
+    if not shouldRefreshForPlayer(p) then return end
+    if espObjects[p] then updateESPColorForPlayer(p) return end
+    local char = p.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return end
+    local hl = Instance.new("Highlight")
+    hl.Name = "TPB_BoxESP"
+    hl.Adornee = char
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.OutlineTransparency = 0
+    hl.OutlineColor = Color3.fromRGB(255,255,255)
+    hl.FillTransparency = 0.7
+    hl.FillColor = getESPColor(p)
+    hl.Parent = char
+    espObjects[p] = { hl }
+end
+
+local function refreshESPForPlayer(p)
+    if FEATURE.ESP then createESPForPlayer(p) else clearESPForPlayer(p) end
+end
+
+local function ensurePlayerListeners(p)
+    if not p then return end
+    if PerPlayerConnections[p] then return end
+    addPerPlayerConnection(p, p.CharacterAdded:Connect(function()
+        local char = p.Character
+        if char then
+            char:WaitForChild("HumanoidRootPart", 2)
+            task.wait(0.06)
+            refreshESPForPlayer(p)
+            addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end))
+        end
+    end))
+    if p.Character then addPerPlayerConnection(p, p.CharacterRemoving:Connect(function() clearESPForPlayer(p) end)) end
+    addPerPlayerConnection(p, p:GetPropertyChangedSignal("Team"):Connect(function() updateESPColorForPlayer(p) end))
+end
+
+local playersAddedConn = nil
+local playersRemovingConn = nil
+local function enableESP()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then ensurePlayerListeners(p) refreshESPForPlayer(p) end
+    end
+    if not playersAddedConn then
+        playersAddedConn = keepPersistent(Players.PlayerAdded:Connect(function(p)
+            if p ~= LocalPlayer then ensurePlayerListeners(p) task.wait(0.12) refreshESPForPlayer(p) end
+        end))
+    end
+    if not playersRemovingConn then
+        playersRemovingConn = keepPersistent(Players.PlayerRemoving:Connect(function(p)
+            clearESPForPlayer(p)
+            clearConnectionsForPlayer(p)
+        end))
+    end
+end
+
+local function disableESP()
+    for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+end
+
+local autoEThread = nil
+local autoEStop = false
+local function startAutoE()
+    if autoEThread then return end
+    if not VIM then
+        FEATURE.AutoE = false
+        warn("AutoE: VirtualInputManager not available. AutoE disabled.")
+        updateHUD("Auto Press E", false)
+        return
+    end
+    autoEStop = false
+    autoEThread = task.spawn(function()
+        while FEATURE.AutoE and not autoEStop do
+            pcall(function()
+                local interval = clamp(FEATURE.AutoEInterval or 0.5, 0.05, 5)
+                pcall(function()
+                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                end)
+                task.wait(interval)
+            end)
+        end
+        autoEThread = nil
+    end)
+    updateHUD("Auto Press E", true)
+end
+
+local function stopAutoE()
+    FEATURE.AutoE = false
+    autoEStop = true
+    updateHUD("Auto Press E", false)
+end
+
+local OriginalWalkByCharacter = {}
+local function setPlayerWalkSpeedForCharacter(char, value)
+    if not char then return end
+    pcall(function()
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if OriginalWalkByCharacter[char] == nil then OriginalWalkByCharacter[char] = hum.WalkSpeed end
+            if hum.WalkSpeed ~= value then hum.WalkSpeed = value end
+        end
+    end)
+end
+
+do
+    local acc = 0
+    keepPersistent(RunService.Heartbeat:Connect(function(dt)
+        if not FEATURE.WalkEnabled then return end
+        acc = acc + dt
+        if acc < WALK_UPDATE_INTERVAL then return end
+        acc = 0
+        pcall(function()
+            local char = LocalPlayer.Character
+            if char then setPlayerWalkSpeedForCharacter(char, FEATURE.WalkValue) end
+        end)
+    end))
+end
+
+local function restoreWalkSpeedForCharacter(char)
+    if not char then return end
+    pcall(function()
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local orig = OriginalWalkByCharacter[char]
+        if hum and orig then hum.WalkSpeed = orig end
+    end)
+    OriginalWalkByCharacter[char] = nil
+end
+
+local function restoreAllWalkSpeeds()
+    for char, _ in pairs(OriginalWalkByCharacter) do restoreWalkSpeedForCharacter(char) end
+    OriginalWalkByCharacter = {}
+    updateHUD("WalkSpeed", false)
+end
+
+local angleBetweenVectors = function(a, b)
+    local dot = a:Dot(b)
+    local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
+    local val = clamp(dot / m, -1, 1)
+    return math.deg(math.acos(val))
+end
+
+local playerMotion = setmetatable({}, { __mode = "k" })
+local function updatePlayerMotion(p, root)
+    if not p or not root then return end
+    local now = tick()
+    local rec = playerMotion[p]
+    if not rec then
+        playerMotion[p] = { pos = root.Position, t = now, vel = Vector3.new(0,0,0) }
+        return
+    end
+    local dt = now - (rec.t or now)
+    if dt > 0 then
+        local newVel = (root.Position - rec.pos) / dt
+        rec.vel = rec.vel:Lerp(newVel, math.clamp(dt * 10, 0, 1))
+        rec.pos = root.Position
+        rec.t = now
+    else
+        rec.pos = root.Position
+        rec.t = now
+    end
+end
+
+local function getPredictedPosition(part)
+    if not part then return nil end
+    local owner = nil
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Character and (p.Character:FindFirstChild("Head") == part or p.Character:FindFirstChild("HumanoidRootPart") == part) then
+            owner = p
+            break
+        end
+    end
+    local basePos = part.Position
+    if not FEATURE.PredictiveAim or not owner then return basePos end
+    local rec = playerMotion[owner]
+    local vel = rec and rec.vel or Vector3.new(0,0,0)
+    local distance = (basePos - (Camera and Camera.CFrame.Position or Vector3.new())).Magnitude
+    local projectileSpeed = math.max(1, FEATURE.ProjectileSpeed or 300)
+    local t = distance / projectileSpeed
+    t = clamp(t, 0, FEATURE.PredictionLimit or 1.5)
+    return basePos + vel * t
+end
+
+keepPersistent(RunService.RenderStepped:Connect(function()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local root = rootPartOfCharacter(p.Character)
+            if root then updatePlayerMotion(p, root) end
+        end
+    end
+end))
+
+keepPersistent(RunService.RenderStepped:Connect(function()
+    if not FEATURE.Aimbot then return end
+    if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+    if UIS:GetFocusedTextBox() then return end
+    safeWaitCamera()
+    if not Camera or not Camera.CFrame then return end
+    local bestHead = nil
+    local bestAngle = 1e9
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local okTarget = false
+            if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) else okTarget = true end
+            if okTarget and p.Character then
+                local hum = p.Character:FindFirstChildOfClass("Humanoid")
+                if not hum or hum.Health <= 0 then
+                    
+                else
+                    local head = p.Character:FindFirstChild("Head") or p.Character:FindFirstChild("UpperTorso") or p.Character:FindFirstChild("HumanoidRootPart")
+                    if head then
+                        local aimPos = getPredictedPosition(head)
+                        if aimPos then
+                            local dir = aimPos - Camera.CFrame.Position
+                            if dir.Magnitude > 0.001 then
+                                local ang = angleBetweenVectors(Camera.CFrame.LookVector, dir.Unit)
+                                if ang < bestAngle and ang <= FEATURE.AIM_FOV_DEG then
+                                    bestHead = aimPos
+                                    bestAngle = ang
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if bestHead then
+        local success, err = pcall(function()
+            local dir = (bestHead - Camera.CFrame.Position)
+            if dir.Magnitude < 1e-4 then return end
+            dir = dir.Unit
+            local currentLook = Camera.CFrame.LookVector
+            local lerpVal = clamp(FEATURE.AIM_LERP, 0.01, 0.95)
+            local blended = currentLook:Lerp(dir, lerpVal)
+            local pos = Camera.CFrame.Position
+            local targetCFrame = CFrame.new(pos, pos + blended)
+            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, lerpVal)
+        end)
+        if not success then
+            warn("Aimbot camera write error:", err)
+            FEATURE.Aimbot = false
+            updateHUD("Aimbot", false)
+        end
+    end
+end))
+
+local teleportContainer = Instance.new("ScrollingFrame", Content)
+teleportContainer.Size = UDim2.new(1,0,0,160)
 teleportContainer.CanvasSize = UDim2.new(0,0,0,0)
 teleportContainer.ScrollBarThickness = 6
 teleportContainer.BackgroundTransparency = 1
@@ -778,191 +878,94 @@ btnNextTeam.MouseButton1Click:Connect(function()
     updateTeleportTeamLabel()
 end)
 
--- ====================================================================================================
--- UTILITY TAB FEATURES
--- ====================================================================================================
-createSeparator(utilityTab, "General Utilities")
-registerToggle("ESP", "ESP", utilityTab, function(state)
+updateTeleportTeamLabel()
+
+createSeparator(Content, "Aimbot Settings")
+
+local aimFrame = Instance.new("Frame", Content)
+aimFrame.Size = UDim2.new(1,0,0,72)
+aimFrame.BackgroundTransparency = 1
+local aimLayout = Instance.new("UIListLayout", aimFrame)
+aimLayout.SortOrder = Enum.SortOrder.LayoutOrder
+aimLayout.Padding = UDim.new(0,6)
+
+local row = Instance.new("Frame", aimFrame)
+row.Size = UDim2.new(1,0,0,28)
+row.BackgroundTransparency = 1
+
+local predBtn = Instance.new("TextButton", row)
+predBtn.Size = UDim2.new(0.42,0,1,0)
+predBtn.Position = UDim2.new(0,0,0,0)
+predBtn.BackgroundColor3 = Color3.fromRGB(36,36,36)
+predBtn.Font = Enum.Font.Gotham
+predBtn.TextSize = 13
+predBtn.TextColor3 = Color3.fromRGB(235,235,235)
+predBtn.Text = "Predictive: " .. (FEATURE.PredictiveAim and "ON" or "OFF")
+Instance.new("UICorner", predBtn).CornerRadius = UDim.new(0,6)
+predBtn.MouseButton1Click:Connect(function()
+    FEATURE.PredictiveAim = not FEATURE.PredictiveAim
+    predBtn.Text = "Predictive: " .. (FEATURE.PredictiveAim and "ON" or "OFF")
+    updateHUD("PredictiveAim", FEATURE.PredictiveAim)
+end)
+
+local speedBox = Instance.new("TextBox", row)
+speedBox.Size = UDim2.new(0.28,0,1,0)
+speedBox.Position = UDim2.new(0.44,6,0,0)
+speedBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
+speedBox.TextColor3 = Color3.fromRGB(240,240,240)
+speedBox.Font = Enum.Font.Gotham
+speedBox.TextSize = 13
+speedBox.ClearTextOnFocus = false
+speedBox.Text = tostring(FEATURE.ProjectileSpeed)
+speedBox.PlaceholderText = "Speed"
+Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
+speedBox.FocusLost:Connect(function(enter)
+    if enter then
+        local n = tonumber(speedBox.Text)
+        if n and n >= 10 and n <= 5000 then FEATURE.ProjectileSpeed = n else speedBox.Text = tostring(FEATURE.ProjectileSpeed) end
+    end
+end)
+
+local limitBox = Instance.new("TextBox", row)
+limitBox.Size = UDim2.new(0.28,0,1,0)
+limitBox.Position = UDim2.new(0.72,6,0,0)
+limitBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
+limitBox.TextColor3 = Color3.fromRGB(240,240,240)
+limitBox.Font = Enum.Font.Gotham
+limitBox.TextSize = 13
+limitBox.ClearTextOnFocus = false
+limitBox.Text = tostring(FEATURE.PredictionLimit)
+limitBox.PlaceholderText = "Limit"
+Instance.new("UICorner", limitBox).CornerRadius = UDim.new(0,6)
+limitBox.FocusLost:Connect(function(enter)
+    if enter then
+        local n = tonumber(limitBox.Text)
+        if n and n >= 0.1 and n <= 5 then FEATURE.PredictionLimit = n else limitBox.Text = tostring(FEATURE.PredictionLimit) end
+    end
+end)
+
+registerToggle("Aimbot", "Aimbot", function(state) updateHUD("Aimbot", state) end)
+
+createSeparator(Content, "Utility")
+registerToggle("ESP", "ESP", function(state)
     if state then enableESP() else disableESP() end
     updateHUD("ESP", state)
 end)
-registerToggle("Auto Press E", "AutoE", utilityTab, function(state)
+registerToggle("Auto Press E", "AutoE", function(state)
     if state then startAutoE() else stopAutoE() end
 end)
-
--- ====================================================================================================
--- AUTOTP TAB FEATURES
--- ====================================================================================================
-local LocalPlayerSpawnPosition = nil
-
--- Fungsi untuk mendapatkan daftar musuh yang valid
-local function getValidEnemies()
-    local enemies = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChildOfClass("Humanoid") and p.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
-            -- Periksa apakah tim musuh berbeda dengan tim pemain lokal
-            if p.Team and LocalPlayer.Team and p.Team ~= LocalPlayer.Team then
-                table.insert(enemies, p)
-            elseif not p.Team or not LocalPlayer.Team then -- Jika tidak ada tim, anggap sebagai musuh
-                table.insert(enemies, p)
-            end
-        end
-    end
-    return enemies
-end
-
-createSeparator(autoTPTab, "Auto Teleport to Enemy")
-
-local autoTPToggleBtn = registerToggle("AutoTP", "AutoTP", autoTPTab, function(state)
+registerToggle("WalkSpeed", "WalkEnabled", function(state)
     if state then
-        LocalPlayerSpawnPosition = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.CFrame.Position
-        if not LocalPlayerSpawnPosition then
-            warn("AutoTP: Tidak dapat menemukan posisi spawn pemain lokal. AutoTP dinonaktifkan.")
-            ToggleCallbacks.AutoTP(false) -- Matikan toggle jika tidak bisa mendapatkan posisi spawn
-            return
-        end
-        startAutoTP()
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
+            if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+        updateHUD("WalkSpeed", true)
     else
-        stopAutoTP()
+        restoreWalkSpeedForCharacter(LocalPlayer.Character)
     end
-    updateHUD("AutoTP", state)
 end)
-
-local enemyListContainer = Instance.new("ScrollingFrame", autoTPTab)
-enemyListContainer.Size = UDim2.new(1,0,0,150) -- Ukuran untuk daftar musuh
-enemyListContainer.CanvasSize = UDim2.new(0,0,0,0)
-enemyListContainer.ScrollBarThickness = 6
-enemyListContainer.BackgroundTransparency = 1
-enemyListContainer.VerticalScrollBarInset = Enum.ScrollBarInset.Always
-
-local enemyListLayout = Instance.new("UIListLayout", enemyListContainer)
-enemyListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-enemyListLayout.Padding = UDim.new(0,4)
-
-enemyListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-    enemyListContainer.CanvasSize = UDim2.new(0,0,0, enemyListLayout.AbsoluteContentSize.Y + 8)
-end)
-
-local activeEnemyButtons = {}
-
-local function clearEnemyButtons()
-    for _, b in ipairs(activeEnemyButtons) do
-        if b and b.Parent then b:Destroy() end
-    end
-    activeEnemyButtons = {}
-end
-
-local function populateEnemyList()
-    clearEnemyButtons()
-    local enemies = getValidEnemies()
-    if #enemies == 0 then
-        local noEnemyLabel = Instance.new("TextLabel", enemyListContainer)
-        noEnemyLabel.Size = UDim2.new(1,0,0,20)
-        noEnemyLabel.BackgroundTransparency = 1
-        noEnemyLabel.Font = Enum.Font.Gotham
-        noEnemyLabel.TextSize = 12
-        noEnemyLabel.TextColor3 = Color3.fromRGB(170,170,170)
-        noEnemyLabel.Text = "Tidak ada musuh ditemukan."
-        noEnemyLabel.TextXAlignment = Enum.TextXAlignment.Center
-        table.insert(activeEnemyButtons, noEnemyLabel)
-    else
-        for _, enemyPlayer in ipairs(enemies) do
-            local enemyBtn = Instance.new("TextButton", enemyListContainer)
-            enemyBtn.Size = UDim2.new(1,0,0,24)
-            enemyBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-            enemyBtn.TextColor3 = Color3.fromRGB(235,235,235)
-            enemyBtn.Font = Enum.Font.Gotham
-            enemyBtn.TextSize = 12
-            enemyBtn.Text = enemyPlayer.Name
-            Instance.new("UICorner", enemyBtn).CornerRadius = UDim.new(0,4)
-
-            enemyBtn.MouseButton1Click:Connect(function()
-                FEATURE.AutoTPTarget = enemyPlayer
-                for _, btn in ipairs(activeEnemyButtons) do
-                    if btn:IsA("TextButton") then
-                        btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
-                    end
-                end
-                enemyBtn.BackgroundColor3 = Color3.fromRGB(80,150,220) -- Warna biru untuk target terpilih
-                warn("AutoTP: Target diatur ke " .. enemyPlayer.Name)
-            end)
-            table.insert(activeEnemyButtons, enemyBtn)
-        end
-    end
-end
-
--- Refresh daftar musuh saat pemain ditambahkan/dihapus
-keepPersistent(Players.PlayerAdded:Connect(function(p)
-    task.wait(0.5) -- Beri waktu karakter untuk memuat
-    if activeTab == "AutoTP" then populateEnemyList() end
-end))
-keepPersistent(Players.PlayerRemoving:Connect(function(p)
-    if FEATURE.AutoTPTarget == p then
-        FEATURE.AutoTPTarget = nil
-        stopAutoTP()
-        warn("AutoTP: Target musuh keluar, AutoTP dinonaktifkan.")
-    end
-    if activeTab == "AutoTP" then populateEnemyList() end
-end))
-
--- AutoTP logic
-local autoTPThread = nil
-local autoTPStop = false
-
-local function startAutoTP()
-    if autoTPThread then return end
-    if not FEATURE.AutoTPTarget then
-        warn("AutoTP: Tidak ada target musuh yang dipilih. AutoTP dinonaktifkan.")
-        ToggleCallbacks.AutoTP(false)
-        return
-    end
-    if not LocalPlayerSpawnPosition then
-        warn("AutoTP: Posisi spawn pemain lokal tidak ditemukan. AutoTP dinonaktifkan.")
-        ToggleCallbacks.AutoTP(false)
-        return
-    end
-
-    autoTPStop = false
-    autoTPThread = task.spawn(function()
-        while FEATURE.AutoTP and not autoTPStop do
-            pcall(function()
-                local targetPlayer = FEATURE.AutoTPTarget
-                if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChildOfClass("Humanoid") or targetPlayer.Character:FindFirstChildOfClass("Humanoid").Health <= 0 then
-                    warn("AutoTP: Target musuh tidak valid atau mati. Mencari target baru...")
-                    FEATURE.AutoTPTarget = nil
-                    populateEnemyList() -- Refresh daftar musuh
-                    ToggleCallbacks.AutoTP(false) -- Matikan AutoTP
-                    return
-                end
-
-                local targetRoot = rootPartOfCharacter(targetPlayer.Character)
-                local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-                if targetRoot and localRoot then
-                    -- Teleport ke musuh
-                    localRoot.CFrame = CFrame.new(targetRoot.Position + Vector3.new(0, 3, 0))
-                    task.wait(0.1) -- Beri sedikit waktu di dekat musuh
-
-                    -- Kembali ke posisi spawn
-                    localRoot.CFrame = CFrame.new(LocalPlayerSpawnPosition + Vector3.new(0, 3, 0))
-                end
-                task.wait(0.5) -- Interval per teleport
-            end)
-        end
-        autoTPThread = nil
-    end)
-    updateHUD("AutoTP", true)
-end
-
-local function stopAutoTP()
-    FEATURE.AutoTP = false
-    autoTPStop = true
-    updateHUD("AutoTP", false)
-end
-
--- ====================================================================================================
--- INITIALIZATION AND CONNECTIONS
--- ====================================================================================================
 
 for k,_ in pairs(FEATURE) do
     local display = nil
@@ -971,7 +974,6 @@ for k,_ in pairs(FEATURE) do
     if k == "WalkEnabled" then display = "WalkSpeed" end
     if k == "Aimbot" then display = "Aimbot" end
     if k == "PredictiveAim" then display = "PredictiveAim" end
-    if k == "AutoTP" then display = "AutoTP" end
     if display then updateHUD(display, FEATURE[k]) end
 end
 
@@ -981,14 +983,12 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then ToggleCallbacks.ESP(not FEATURE.ESP)
     elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
     elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot)
-    elseif input.KeyCode == Enum.KeyCode.F5 and ToggleCallbacks.AutoTP then ToggleCallbacks.AutoTP(not FEATURE.AutoTP) end
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
 end))
 
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
     restoreWalkSpeedForCharacter(char)
     stopAutoE()
-    stopAutoTP()
 end))
 
 keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
@@ -1004,13 +1004,6 @@ keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
         task.wait(0.2)
         for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then refreshESPForPlayer(p) end end
     end
-    if FEATURE.AutoTP then
-        LocalPlayerSpawnPosition = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and LocalPlayer.Character.HumanoidRootPart.CFrame.Position
-        if not LocalPlayerSpawnPosition then
-            warn("AutoTP: Posisi spawn pemain lokal tidak ditemukan setelah respawn. AutoTP dinonaktifkan.")
-            ToggleCallbacks.AutoTP(false)
-        end
-    end
 end))
 
 if _G then
@@ -1024,14 +1017,9 @@ if _G then
         end)
         restoreAllWalkSpeeds()
         stopAutoE()
-        stopAutoTP()
         clearAllConnections()
         playerMotion = {}
         espObjects = {}
-        FEATURE.AutoTPTarget = nil
-        LocalPlayerSpawnPosition = nil
-        clearEnemyButtons()
-        -- Tidak perlu menghancurkan autoTPFrame secara eksplisit jika sudah menjadi bagian dari MainFrame yang dihancurkan
     end
 end
 print("Script Loaded")
