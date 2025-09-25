@@ -256,18 +256,25 @@ autoTPDropdown.TextSize = 13
 autoTPDropdown.Text = "Pilih Musuh"
 Instance.new("UICorner", autoTPDropdown).CornerRadius = UDim.new(0,6)
 
-local autoTPListFrame = Instance.new("Frame", autoTPFrame)
-autoTPListFrame.Size = UDim2.new(0.4,0,0,100)
+local autoTPListFrame = Instance.new("ScrollingFrame", autoTPFrame)
+autoTPListFrame.Size = UDim2.new(0.4,0,0,120)
 autoTPListFrame.Position = UDim2.new(0.4,8,1,0)
 autoTPListFrame.BackgroundColor3 = Color3.fromRGB(40,40,40)
 autoTPListFrame.Visible = false
 autoTPListFrame.ClipsDescendants = true
 autoTPListFrame.ZIndex = 10
+autoTPListFrame.ScrollBarThickness = 6
+autoTPListFrame.CanvasSize = UDim2.new(0,0,0,0)
+autoTPListFrame.VerticalScrollBarInset = Enum.ScrollBarInset.Always
 Instance.new("UICorner", autoTPListFrame).CornerRadius = UDim.new(0,6)
 
 local autoTPListLayout = Instance.new("UIListLayout", autoTPListFrame)
 autoTPListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 autoTPListLayout.Padding = UDim.new(0,2)
+
+autoTPListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    autoTPListFrame.CanvasSize = UDim2.new(0,0,0, autoTPListLayout.AbsoluteContentSize.Y + 8)
+end)
 
 local autoTPEnabled = false
 local autoTPSelected = nil
