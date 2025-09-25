@@ -7,6 +7,8 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local TeleportService = game:GetService("TeleportService")
+
+
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
@@ -26,15 +28,11 @@ local FEATURE = {
     AIM_FOV_DEG = 8,
     AIM_LERP = 0.4,
     AIM_HOLD = false,
-    PredictiveAim = false,
-    ProjectileSpeed = 100,
-    PredictionLimit = 0.5,
-    AutoTP = false,
-    AutoTPShot = false,
-
+    PredictiveAim = true,
+    ProjectileSpeed = 300,
+    PredictionLimit = 1.5,
+    AutoShot = false,
 }
-
-local SelectedTarget = nil
 
 local WALK_UPDATE_INTERVAL = 0.12
 
@@ -102,56 +100,6 @@ local TELEPORT_COORDS = {
 
 local PersistentConnections = {}
 local PerPlayerConnections = {}
-
-local function setupAutoTP(tool)
-    local originalCFrame = nil
-
-    tool.Activated:Connect(function()
-        if FEATURE.AutoTPShot and SelectedTarget and SelectedTarget.Character and SelectedTarget.Character:FindFirstChild("HumanoidRootPart") then
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local targetHRP = SelectedTarget.Character.HumanoidRootPart
-            if hrp and targetHRP then
-                -- Simpan posisi asli
-                originalCFrame = hrp.CFrame
-
-                -- Teleport ke belakang target
-                hrp.CFrame = targetHRP.CFrame * CFrame.new(-2, 0, 0)
-            end
-        end
-    end)
-
-    tool.Deactivated:Connect(function()
-        if FEATURE.AutoTPShot and originalCFrame and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            -- Kembali ke posisi asal
-            LocalPlayer.Character.HumanoidRootPart.CFrame = originalCFrame
-            originalCFrame = nil
-        end
-    end)
-end
-
-local function connectTools(char)
-    for _, tool in ipairs(char:GetChildren()) do
-        if tool:IsA("Tool") then
-            setupAutoTP(tool)
-        end
-    end
-    char.ChildAdded:Connect(function(child)
-        if child:IsA("Tool") then
-            setupAutoTP(child)
-        end
-    end)
-end
-
-if LocalPlayer.Character then
-    connectTools(LocalPlayer.Character)
-end
-
-LocalPlayer.CharacterAdded:Connect(function(char)
-    char:WaitForChild("HumanoidRootPart", 3)
-    task.wait(0.5)
-    connectTools(char)
-end)
-
 
 local function keepPersistent(conn)
     if conn and conn.Disconnect then
@@ -398,8 +346,7 @@ hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
 hudAdd("PredictiveAim")
-hudAdd("Auto TP")
-hudAdd("Auto TP Shot")
+hudAdd("Auto Shot")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -672,19 +619,6 @@ local function restoreAllWalkSpeeds()
     updateHUD("WalkSpeed", false)
 end
 
-local function getValidPlayers()
-    local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if not LocalPlayer.Team or not p.Team or (p.Team ~= LocalPlayer.Team) then
-                table.insert(list, p)
-            end
-        end
-    end
-    return list
-end
-
-
 local angleBetweenVectors = function(a, b)
     local dot = a:Dot(b)
     local m = math.max(a.Magnitude * b.Magnitude, 1e-6)
@@ -734,6 +668,15 @@ local function getPredictedPosition(part)
 end
 
 keepPersistent(RunService.RenderStepped:Connect(function()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local root = rootPartOfCharacter(p.Character)
+            if root then updatePlayerMotion(p, root) end
+        end
+    end
+end))
+
+keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
     if FEATURE.AIM_HOLD and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
     if UIS:GetFocusedTextBox() then return end
@@ -742,14 +685,10 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     local bestHead = nil
     local bestAngle = 1e9
     for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= LocalPlayer then
-        local okTarget = false
-        if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) else okTarget = true end
-        if okTarget and p.Character then
-            if SelectedTarget and p ~= SelectedTarget then
-                continue
-            end
-
+        if p ~= LocalPlayer then
+            local okTarget = false
+            if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) else okTarget = true end
+            if okTarget and p.Character then
                 local hum = p.Character:FindFirstChildOfClass("Humanoid")
                 if not hum or hum.Health <= 0 then
                     
@@ -773,6 +712,34 @@ keepPersistent(RunService.RenderStepped:Connect(function()
         end
     end
 
+local isShooting = false
+keepPersistent(RunService.RenderStepped:Connect(function()
+    if FEATURE.AutoShot and FEATURE.Aimbot then
+        if bestHead then
+            if not isShooting then
+                isShooting = true
+                pcall(function()
+                    VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0) -- Mouse1 down
+                end)
+            end
+        else
+            if isShooting then
+                isShooting = false
+                pcall(function()
+                    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0) -- Mouse1 up
+                end)
+            end
+        end
+    elseif isShooting then
+        -- kalau AutoShot mati, pastikan lepas tembakan
+        isShooting = false
+        pcall(function()
+            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        end)
+    end
+end))
+
+    
     if bestHead then
         local success, err = pcall(function()
             local dir = (bestHead - Camera.CFrame.Position)
@@ -943,57 +910,6 @@ btnNextTeam.MouseButton1Click:Connect(function()
     updateTeleportTeamLabel()
 end)
 
-local autoTPThread = nil
-local autoTPStop = false
-local OFFSET = -3
-
-local function startAutoTP()
-    if autoTPThread then return end
-    autoTPStop = false
-    autoTPThread = task.spawn(function()
-        while FEATURE.AutoTP and not autoTPStop do
-            pcall(function()
-                local char = LocalPlayer.Character
-                local root = char and char:FindFirstChild("HumanoidRootPart")
-                if root then
-                    -- cari musuh terdekat
-                    local target = nil
-                    local nearestDist = math.huge
-                    for _, p in ipairs(Players:GetPlayers()) do
-                        if p ~= LocalPlayer and p.Character then
-                            local hum = p.Character:FindFirstChildOfClass("Humanoid")
-                            local enemyRoot = p.Character:FindFirstChild("HumanoidRootPart")
-                            if hum and hum.Health > 0 and enemyRoot then
-                                local dist = (enemyRoot.Position - root.Position).Magnitude
-                                if dist < nearestDist then
-                                    nearestDist = dist
-                                    target = enemyRoot
-                                end
-                            end
-                        end
-                    end
-
-                    -- teleport sebentar ke musuh, lalu balik
-                    if target then
-                        local oldPos = root.CFrame
-                        root.CFrame = target.CFrame * CFrame.new(0, 0, OFFSET)
-                        task.wait(0.1) -- delay sangat singkat untuk hit
-                        root.CFrame = oldPos
-                    end
-                end
-            end)
-            task.wait(0.25) -- jeda antar TP
-        end
-        autoTPThread = nil
-    end)
-end
-
-local function stopAutoTP()
-    FEATURE.AutoTP = false
-    autoTPStop = true
-end
-
-
 updateTeleportTeamLabel()
 
 createSeparator(Content, "Aimbot Settings")
@@ -1083,36 +999,8 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 
-registerToggle("AutoTP Shot", "AutoTP" function(state)
-    if state then
-        startAutoTP()
-    else
-        stopAutoTP()
-    end
-end)
-
-local playerDropdown = Instance.new("TextButton", Content)
-playerDropdown.Size = UDim2.new(1,0,0,32)
-playerDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
-playerDropdown.TextColor3 = Color3.fromRGB(235,235,235)
-playerDropdown.Font = Enum.Font.Gotham
-playerDropdown.TextSize = 14
-playerDropdown.Text = "🎯 Pilih Target: NONE"
-Instance.new("UICorner", playerDropdown).CornerRadius = UDim.new(0,6)
-
-playerDropdown.MouseButton1Click:Connect(function()
-    local valid = getValidPlayers()
-    if #valid == 0 then
-        playerDropdown.Text = "🎯 Tidak ada target"
-        SelectedTarget = nil
-        return
-    end
-    
-    local idx = table.find(valid, SelectedTarget) or 0
-    idx = idx + 1
-    if idx > #valid then idx = 1 end
-    SelectedTarget = valid[idx]
-    playerDropdown.Text = "🎯 Target: " .. SelectedTarget.Name
+registerToggle("Auto Shot", "AutoShot", function(state)
+    updateHUD("Auto Shot", state)
 end)
 
 
@@ -1132,8 +1020,7 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then ToggleCallbacks.ESP(not FEATURE.ESP)
     elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
     elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
-    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) 
-    elseif input.KeyCode == Enum.KeyCode.T and ToggleCallbacks.AutoTP then ToggleCallbacks.AutoTP(not FEATURE.AutoTP)end
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
 end))
 
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
