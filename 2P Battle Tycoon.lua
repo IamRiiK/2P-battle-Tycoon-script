@@ -921,7 +921,7 @@ local function refreshEnemyButtons()
             btn.Text = p.Name
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
             btn.MouseButton1Click:Connect(function()
-                teleportToEnemy(p, 1.5) -- interval 1.5 detik bisa diganti
+                teleportToEnemy(p, 1.) -- interval 1 detik bisa diganti
             end)
             table.insert(enemyButtons, btn)
         end
