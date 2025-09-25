@@ -102,6 +102,20 @@ local TELEPORT_COORDS = {
 local PersistentConnections = {}
 local PerPlayerConnections = {}
 
+LocalPlayer.Character.ChildAdded:Connect(function(child)
+    if child:IsA("Tool") then
+        setupAutoTP(child)
+    end
+end)
+
+for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+    if tool:IsA("Tool") then
+        setupAutoTP(tool)
+    end
+end
+
+
+
 local function keepPersistent(conn)
     if conn and conn.Disconnect then
         table.insert(PersistentConnections, conn)
@@ -682,14 +696,19 @@ local function getPredictedPosition(part)
     return basePos + vel * t
 end
 
-keepPersistent(RunService.RenderStepped:Connect(function()
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
-            local root = rootPartOfCharacter(p.Character)
-            if root then updatePlayerMotion(p, root) end
+local function setupAutoTP(tool)
+    tool.Activated:Connect(function()
+        if FEATURE.AutoTPShot and SelectedTarget and SelectedTarget.Character and SelectedTarget.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local targetHRP = SelectedTarget.Character.HumanoidRootPart
+            if hrp and targetHRP then
+                -- Offset di belakang target (misal -2 stud di arah LookVector target)
+                hrp.CFrame = targetHRP.CFrame * CFrame.new(0,0,-2)
+            end
         end
-    end
-end))
+    end)
+end
+
 
 keepPersistent(RunService.RenderStepped:Connect(function()
     if not FEATURE.Aimbot then return end
