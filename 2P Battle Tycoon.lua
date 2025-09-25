@@ -29,6 +29,12 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
+
+    -- New FakeBring feature
+    FakeBring = false,            -- master toggle
+    FakeBringTarget = nil,        -- Player object
+    FakeBringDistance = 10,       -- distance in studs in front of camera
+    FakeBringYOffset = -1.5,      -- vertical offset to place model slightly lower
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -403,6 +409,7 @@ local function registerToggle(displayName, featureKey, onChange)
     return btn
 end
 
+-- WalkSpeed UI
 do
     local frame = Instance.new("Frame", Content)
     frame.Size = UDim2.new(1,0,0,36)
@@ -728,6 +735,154 @@ keepPersistent(RunService.RenderStepped:Connect(function()
     end
 end))
 
+-- START OF FAKEBRING IMPLEMENTATION
+
+-- Table to hold fake models and metadata per player
+local FakeBringData = {}
+
+local function createProxyForCharacter(sourceChar)
+    if not sourceChar then return nil end
+    local root = sourceChar:FindFirstChild("HumanoidRootPart") or sourceChar:FindFirstChild("Torso") or sourceChar:FindFirstChild("UpperTorso")
+    if not root then return nil end
+
+    local proxyModel = Instance.new("Model")
+    proxyModel.Name = "_TPB_FakeBringProxy"
+
+    -- store parts mapping and offsets relative to source root
+    local parts = {}
+    for _, obj in ipairs(sourceChar:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            local p = Instance.new("Part")
+            p.Name = obj.Name
+            p.Size = obj.Size
+            p.Anchored = true
+            p.CanCollide = false
+            p.Transparency = math.clamp(obj.Transparency * 0.6, 0, 0.9)
+            p.Material = obj.Material
+            p.Color = obj.Color
+            p.CastShadow = false
+            p.Parent = proxyModel
+
+            local rel = root.CFrame:ToObjectSpace(obj.CFrame)
+            parts[#parts + 1] = { srcName = obj:GetFullName(), part = p, offset = rel }
+        end
+    end
+
+    -- minimal humanoid to mimic animations (optional)
+    local hum = Instance.new("Humanoid")
+    hum.Name = "FakeHumanoid"
+    hum.Parent = proxyModel
+
+    proxyModel.Parent = Workspace
+
+    return { model = proxyModel, parts = parts, rootOffset = CFrame.new(), humanoid = hum }
+end
+
+local function destroyProxy(data)
+    if not data then return end
+    pcall(function()
+        if data.model and data.model.Parent then data.model:Destroy() end
+    end)
+end
+
+local fakeBringRenderConn = nil
+
+local function enableFakeBringForPlayer(p)
+    if not p or p == LocalPlayer then return end
+    disableFakeBring() -- ensure only one target at a time as requested
+
+    local char = p.Character
+    if not char then return end
+
+    local proxy = createProxyForCharacter(char)
+    if not proxy then return end
+
+    FakeBringData[p] = proxy
+    FEATURE.FakeBringTarget = p
+
+    -- render loop to keep proxy in front of camera and match relative offsets
+    fakeBringRenderConn = keepPersistent(RunService.RenderStepped:Connect(function()
+        if not FEATURE.FakeBring or not FEATURE.FakeBringTarget then return end
+        safeWaitCamera()
+        if not Camera or not Camera.CFrame then return end
+        local dist = FEATURE.FakeBringDistance
+        local baseCFrame = Camera.CFrame * CFrame.new(0, FEATURE.FakeBringYOffset, -dist)
+
+        local rec = FakeBringData[FEATURE.FakeBringTarget]
+        if not rec or not rec.model then
+            FEATURE.FakeBring = false
+            FEATURE.FakeBringTarget = nil
+            return
+        end
+
+        -- place each proxy part according to stored offset
+        for _, info in ipairs(rec.parts) do
+            local targetCFrame = baseCFrame * info.offset
+            if info.part and info.part.Parent then
+                info.part.CFrame = targetCFrame
+                if info.part.Transparency >= 1 then info.part.Transparency = 0.9 end
+            end
+        end
+    end))
+end
+
+function disableFakeBring()
+    FEATURE.FakeBring = false
+    local targ = FEATURE.FakeBringTarget
+    FEATURE.FakeBringTarget = nil
+    if fakeBringRenderConn then
+        pcall(function() fakeBringRenderConn:Disconnect() end)
+        fakeBringRenderConn = nil
+    end
+    if targ and FakeBringData[targ] then
+        destroyProxy(FakeBringData[targ])
+        FakeBringData[targ] = nil
+    end
+end
+
+-- utility to toggle fake bring with a player
+local function setFakeBringTarget(p)
+    if not p or p == LocalPlayer then return end
+    if FEATURE.FakeBring and FEATURE.FakeBringTarget == p then
+        disableFakeBring()
+        return
+    end
+    FEATURE.FakeBring = true
+    enableFakeBringForPlayer(p)
+end
+
+-- ensure proxies cleaned when player leaves or dies
+Players.PlayerRemoving:Connect(function(p)
+    if FakeBringData[p] then
+        destroyProxy(FakeBringData[p])
+        FakeBringData[p] = nil
+    end
+    if FEATURE.FakeBringTarget == p then
+        disableFakeBring()
+    end
+end)
+
+-- Modify aimbot prediction/getting head positions to use proxy if active
+local original_getPredictedPosition = getPredictedPosition
+getPredictedPosition = function(part)
+    if FEATURE.FakeBring and FEATURE.FakeBringTarget and FakeBringData[FEATURE.FakeBringTarget] then
+        local proxy = FakeBringData[FEATURE.FakeBringTarget]
+        if proxy and proxy.parts then
+            for _, info in ipairs(proxy.parts) do
+                if info.part and info.part.Name == (part and part.Name) then
+                    return info.part.Position
+                end
+            end
+            if proxy.parts[1] and proxy.parts[1].part then
+                return proxy.parts[1].part.Position
+            end
+        end
+    end
+    return original_getPredictedPosition(part)
+end
+
+-- END OF FAKEBRING IMPLEMENTATION
+
 local teleportContainer = Instance.new("ScrollingFrame", Content)
 teleportContainer.Size = UDim2.new(1,0,0,160)
 teleportContainer.CanvasSize = UDim2.new(0,0,0,0)
@@ -960,6 +1115,171 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
             local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if hum and LocalPlayer.Character and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
             if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+        updateHUD("WalkSpeed", true)
+    else
+        restoreWalkSpeedForCharacter(LocalPlayer.Character)
+    end
+end)
+
+for k,_ in pairs(FEATURE) do
+    local display = nil
+    if k == "ESP" then display = "ESP" end
+    if k == "AutoE" then display = "Auto Press E" end
+    if k == "WalkEnabled" then display = "WalkSpeed" end
+    if k == "Aimbot" then display = "Aimbot" end
+    if k == "PredictiveAim" then display = "PredictiveAim" end
+    if display then updateHUD(display, FEATURE[k]) end
+end
+
+keepPersistent(UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if UIS:GetFocusedTextBox() then return end
+    if input.KeyCode == Enum.KeyCode.F1 and ToggleCallbacks.ESP then ToggleCallbacks.ESP(not FEATURE.ESP)
+    elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
+    elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
+    elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
+end))
+
+keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
+    restoreWalkSpeedForCharacter(char)
+    stopAutoE()
+end))
+
+keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    if FEATURE.WalkEnabled then
+        pcall(function()
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum and OriginalWalkByCharacter[LocalPlayer.Character] == nil then OriginalWalkByCharacter[LocalPlayer.Character] = hum.WalkSpeed end
+            if hum then hum.WalkSpeed = FEATURE.WalkValue end
+        end)
+    end
+    if FEATURE.ESP then
+        task.wait(0.2)
+        for _, p in ipairs(Players:GetPlayers()) do if p ~= LocalPlayer then refreshESPForPlayer(p) end end
+    end
+end))
+
+-- Build Fake Bring UI (selective player list)
+local function buildPlayerListUI(parentFrame)
+    local sep = createSeparator(parentFrame, "Fake Bring")
+
+    local container = Instance.new("Frame", parentFrame)
+    container.Size = UDim2.new(1,0,0,140)
+    container.BackgroundTransparency = 1
+
+    local scroll = Instance.new("ScrollingFrame", container)
+    scroll.Size = UDim2.new(1,0,0,120)
+    scroll.Position = UDim2.new(0,0,0,20)
+    scroll.CanvasSize = UDim2.new(0,0,0,0)
+    scroll.ScrollBarThickness = 6
+    scroll.BackgroundTransparency = 1
+
+    local layout = Instance.new("UIListLayout", scroll)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0,6)
+
+    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        scroll.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 8)
+    end)
+
+    local function refresh()
+        for _, child in ipairs(scroll:GetChildren()) do
+            if child:IsA("TextButton") or child:IsA("Frame") then child:Destroy() end
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local btn = Instance.new("TextButton", scroll)
+                btn.Size = UDim2.new(1,0,0,26)
+                btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 13
+                btn.TextColor3 = Color3.fromRGB(230,230,230)
+                btn.Text = p.Name
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+
+                btn.MouseButton1Click:Connect(function()
+                    setFakeBringTarget(p)
+                    for _, c in ipairs(scroll:GetChildren()) do
+                        if c:IsA("TextButton") then c.BackgroundColor3 = Color3.fromRGB(40,40,40) end
+                    end
+                    if FEATURE.FakeBring and FEATURE.FakeBringTarget == p then
+                        btn.BackgroundColor3 = Color3.fromRGB(80,150,220)
+                    end
+                end)
+            end
+        end
+    end
+
+    refresh()
+    Players.PlayerAdded:Connect(function() task.wait(0.08) refresh() end)
+    Players.PlayerRemoving:Connect(function() task.wait(0.08) refresh() end)
+
+    local ctrlRow = Instance.new("Frame", container)
+    ctrlRow.Size = UDim2.new(1,0,0,20)
+    ctrlRow.Position = UDim2.new(0,0,0,0)
+    ctrlRow.BackgroundTransparency = 1
+
+    local distBox = Instance.new("TextBox", ctrlRow)
+    distBox.Size = UDim2.new(0.5,-6,1,0)
+    distBox.Position = UDim2.new(0,0,0,0)
+    distBox.Text = tostring(FEATURE.FakeBringDistance)
+    distBox.Font = Enum.Font.Gotham
+    distBox.TextSize = 12
+    distBox.BackgroundColor3 = Color3.fromRGB(36,36,36)
+    distBox.TextColor3 = Color3.fromRGB(240,240,240)
+    Instance.new("UICorner", distBox).CornerRadius = UDim.new(0,6)
+    distBox.ClearTextOnFocus = false
+    distBox.PlaceholderText = "Distance"
+    distBox.FocusLost:Connect(function(enter)
+        if enter then
+            local n = tonumber(distBox.Text)
+            if n and n >= 4 and n <= 60 then FEATURE.FakeBringDistance = n else distBox.Text = tostring(FEATURE.FakeBringDistance) end
+        end
+    end)
+
+    local clearBtn = Instance.new("TextButton", ctrlRow)
+    clearBtn.Size = UDim2.new(0.5,-6,1,0)
+    clearBtn.Position = UDim2.new(0.5,6,0,0)
+    clearBtn.Text = "Clear"
+    clearBtn.Font = Enum.Font.Gotham
+    clearBtn.TextSize = 12
+    clearBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    clearBtn.TextColor3 = Color3.fromRGB(240,240,240)
+    Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0,6)
+    clearBtn.MouseButton1Click:Connect(function()
+        disableFakeBring()
+        for _, c in ipairs(scroll:GetChildren()) do if c:IsA("TextButton") then c.BackgroundColor3 = Color3.fromRGB(40,40,40) end end
+    end)
+
+    return container
+end
+
+-- Attach the FakeBring UI to the main Content frame
+buildPlayerListUI(Content)
+
+if _G then
+    _G.__TPB_CLEANUP = function()
+        for p,_ in pairs(espObjects) do clearESPForPlayer(p) end
+        pcall(function()
+            local g = PlayerGui:FindFirstChild("TPB_TycoonGUI_Final")
+            if g then g:Destroy() end
+            local gh = PlayerGui:FindFirstChild("TPB_TycoonHUD_Final")
+            if gh then gh:Destroy() end
+        end)
+        restoreAllWalkSpeeds()
+        stopAutoE()
+        clearAllConnections()
+        playerMotion = {}
+        espObjects = {}
+        disableFakeBring()
+    end
+end
+
+print("Script Loaded with FakeBring feature")
+
+if hum then hum.WalkSpeed = FEATURE.WalkValue end
         end)
         updateHUD("WalkSpeed", true)
     else
