@@ -7,8 +7,6 @@ local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local TeleportService = game:GetService("TeleportService")
-
-
 local Camera = Workspace.CurrentCamera or Workspace:FindFirstChild("CurrentCamera")
 if not Camera then
     local ok, cam = pcall(function() return Workspace:WaitForChild("CurrentCamera", 5) end)
@@ -31,7 +29,6 @@ local FEATURE = {
     PredictiveAim = true,
     ProjectileSpeed = 300,
     PredictionLimit = 1.5,
-    AutoShot = false,
 }
 
 local WALK_UPDATE_INTERVAL = 0.12
@@ -346,7 +343,6 @@ hudAdd("Auto Press E")
 hudAdd("WalkSpeed")
 hudAdd("Aimbot")
 hudAdd("PredictiveAim")
-hudAdd("Auto Shot")
 
 local function updateHUD(name, state)
     if hudLabels[name] then
@@ -712,34 +708,6 @@ keepPersistent(RunService.RenderStepped:Connect(function()
         end
     end
 
-local isShooting = false
-keepPersistent(RunService.RenderStepped:Connect(function()
-    if FEATURE.AutoShot and FEATURE.Aimbot then
-        if bestHead then
-            if not isShooting then
-                isShooting = true
-                pcall(function()
-                    VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0) -- Mouse1 down
-                end)
-            end
-        else
-            if isShooting then
-                isShooting = false
-                pcall(function()
-                    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0) -- Mouse1 up
-                end)
-            end
-        end
-    elseif isShooting then
-        -- kalau AutoShot mati, pastikan lepas tembakan
-        isShooting = false
-        pcall(function()
-            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-        end)
-    end
-end))
-
-    
     if bestHead then
         local success, err = pcall(function()
             local dir = (bestHead - Camera.CFrame.Position)
@@ -999,11 +967,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 
-registerToggle("Auto Shot", "AutoShot", function(state)
-    updateHUD("Auto Shot", state)
-end)
-
-
 for k,_ in pairs(FEATURE) do
     local display = nil
     if k == "ESP" then display = "ESP" end
@@ -1059,5 +1022,4 @@ if _G then
         espObjects = {}
     end
 end
-
 print("Script Loaded")
