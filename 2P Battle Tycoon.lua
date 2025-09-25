@@ -692,7 +692,7 @@ local function doTPShot(targetPlayer)
 end
 
     
-    local basePos = part.Position
+        local basePos = part.Position
     if not FEATURE.PredictiveAim or not owner then return basePos end
     local rec = playerMotion[owner]
     local vel = rec and rec.vel or Vector3.new(0,0,0)
@@ -750,18 +750,13 @@ keepPersistent(RunService.RenderStepped:Connect(function()
 
 if FEATURE.TPShot and bestHead then
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local okTarget = false
-            if p.Team and LocalPlayer.Team then okTarget = (p.Team ~= LocalPlayer.Team) else okTarget = true end
-            if okTarget and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                doTPShot(p)
-                break
-            end
+        if p.Character and rootPartOfCharacter(p.Character) == bestHead then
+            doTPShot(p)
+            break
         end
     end
 end
 
-            
     if bestHead then
         local success, err = pcall(function()
             local dir = (bestHead - Camera.CFrame.Position)
