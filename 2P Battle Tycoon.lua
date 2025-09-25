@@ -29,80 +29,7 @@ local FEATURE = {
     PredictiveAim = false,
     ProjectileSpeed = 100,
     PredictionLimit = 0.5,
-    AutoTP = false,
-    AutoTPInterval = 0.5,
-    AutoTP_Target = nil, -- Player target
 }
--- Fungsi getEnemyPlayers tetap di sini
-local function getEnemyPlayers()
-    local enemies = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Team ~= nil and LocalPlayer.Team ~= nil and p.Team ~= LocalPlayer.Team then
-            table.insert(enemies, p)
-        end
-    end
-    return enemies
-end
-
-
--- UI: Dropdown untuk memilih target musuh AutoTP (ditempatkan setelah Content dibuat)
--- Penempatan di sini agar Content sudah ada
-do
-    local autoTPDropdownFrame = Instance.new("Frame", Content)
-    autoTPDropdownFrame.Size = UDim2.new(1,0,0,32)
-    autoTPDropdownFrame.BackgroundTransparency = 1
-    local autoTPDropdownLabel = Instance.new("TextLabel", autoTPDropdownFrame)
-    autoTPDropdownLabel.Size = UDim2.new(0.4,0,1,0)
-    autoTPDropdownLabel.BackgroundTransparency = 1
-    autoTPDropdownLabel.Font = Enum.Font.Gotham
-    autoTPDropdownLabel.TextSize = 13
-    autoTPDropdownLabel.TextColor3 = Color3.fromRGB(230,230,230)
-    autoTPDropdownLabel.Text = "AutoTP Target:"
-    autoTPDropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-    local autoTPDropdown = Instance.new("TextButton", autoTPDropdownFrame)
-    autoTPDropdown.Size = UDim2.new(0.6,-6,1,0)
-    autoTPDropdown.Position = UDim2.new(0.4,6,0,0)
-    autoTPDropdown.BackgroundColor3 = Color3.fromRGB(36,36,36)
-    autoTPDropdown.TextColor3 = Color3.fromRGB(240,240,240)
-    autoTPDropdown.Font = Enum.Font.Gotham
-    autoTPDropdown.TextSize = 13
-    autoTPDropdown.Text = "(Pilih musuh)"
-    Instance.new("UICorner", autoTPDropdown).CornerRadius = UDim.new(0,6)
-
-    local function refreshAutoTPDropdown()
-        local enemies = getEnemyPlayers()
-        if #enemies == 0 then
-            autoTPDropdown.Text = "(Tidak ada musuh)"
-            FEATURE.AutoTP_Target = nil
-            return
-        end
-        if not FEATURE.AutoTP_Target or not table.find(enemies, FEATURE.AutoTP_Target) then
-            FEATURE.AutoTP_Target = enemies[1]
-        end
-        autoTPDropdown.Text = FEATURE.AutoTP_Target and FEATURE.AutoTP_Target.Name or "(Pilih musuh)"
-    end
-
-    autoTPDropdown.MouseButton1Click:Connect(function()
-        local enemies = getEnemyPlayers()
-        if #enemies == 0 then return end
-        local idx = table.find(enemies, FEATURE.AutoTP_Target) or 1
-        idx = idx + 1
-        if idx > #enemies then idx = 1 end
-        FEATURE.AutoTP_Target = enemies[idx]
-        autoTPDropdown.Text = FEATURE.AutoTP_Target and FEATURE.AutoTP_Target.Name or "(Pilih musuh)"
-    end)
-
-    Players.PlayerAdded:Connect(function()
-        task.wait(0.2)
-        refreshAutoTPDropdown()
-    end)
-    Players.PlayerRemoving:Connect(function()
-        task.wait(0.2)
-        refreshAutoTPDropdown()
-    end)
-    refreshAutoTPDropdown()
-end
 
 local WALK_UPDATE_INTERVAL = 0.12
 
@@ -474,49 +401,6 @@ local function registerToggle(displayName, featureKey, onChange)
     ToggleCallbacks[featureKey] = setState
     Buttons[featureKey] = btn
     return btn
-end
-
--- AUTO TP FEATURE
-local autoTPThread = nil
-local autoTPStop = false
-local lastTPPos = nil
-local function getTargetTPPosition()
-    local p = FEATURE.AutoTP_Target
-    if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-        local root = p.Character.HumanoidRootPart
-        return root.Position + root.CFrame.LookVector * 5
-    end
-    return nil
-end
-local function startAutoTP()
-    if autoTPThread then return end
-    autoTPStop = false
-    autoTPThread = task.spawn(function()
-        while FEATURE.AutoTP and not autoTPStop do
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                lastTPPos = root.CFrame
-                local targetPos = getTargetTPPosition()
-                if targetPos then
-                    root.CFrame = CFrame.new(targetPos)
-                    task.wait(FEATURE.AutoTPInterval or 0.5)
-                    -- Kembali ke posisi semula
-                    if FEATURE.AutoTP and not autoTPStop and lastTPPos then
-                        root.CFrame = lastTPPos
-                    end
-                end
-            end
-            task.wait(0.1)
-        end
-        autoTPThread = nil
-    end)
-    updateHUD("AutoTP", true)
-end
-local function stopAutoTP()
-    FEATURE.AutoTP = false
-    autoTPStop = true
-    updateHUD("AutoTP", false)
 end
 
 do
@@ -1083,10 +967,6 @@ registerToggle("WalkSpeed", "WalkEnabled", function(state)
     end
 end)
 
-registerToggle("AutoTP", "AutoTP", function(state)
-    if state then startAutoTP() else stopAutoTP() end
-end)
-
 for k,_ in pairs(FEATURE) do
     local display = nil
     if k == "ESP" then display = "ESP" end
@@ -1094,7 +974,6 @@ for k,_ in pairs(FEATURE) do
     if k == "WalkEnabled" then display = "WalkSpeed" end
     if k == "Aimbot" then display = "Aimbot" end
     if k == "PredictiveAim" then display = "PredictiveAim" end
-    if k == "AutoTP" then display = "AutoTP" end
     if display then updateHUD(display, FEATURE[k]) end
 end
 
@@ -1105,16 +984,11 @@ keepPersistent(UIS.InputBegan:Connect(function(input, gp)
     elseif input.KeyCode == Enum.KeyCode.F2 and ToggleCallbacks.AutoE then ToggleCallbacks.AutoE(not FEATURE.AutoE)
     elseif input.KeyCode == Enum.KeyCode.F3 and ToggleCallbacks.WalkEnabled then ToggleCallbacks.WalkEnabled(not FEATURE.WalkEnabled)
     elseif input.KeyCode == Enum.KeyCode.F4 and ToggleCallbacks.Aimbot then ToggleCallbacks.Aimbot(not FEATURE.Aimbot) end
-    -- Hotkey T untuk AutoTP
-    if input.KeyCode == Enum.KeyCode.T and ToggleCallbacks.AutoTP then
-        ToggleCallbacks.AutoTP(not FEATURE.AutoTP)
-    end
 end))
 
 keepPersistent(LocalPlayer.CharacterRemoving:Connect(function(char)
     restoreWalkSpeedForCharacter(char)
     stopAutoE()
-    stopAutoTP()
 end))
 
 keepPersistent(LocalPlayer.CharacterAdded:Connect(function()
@@ -1143,7 +1017,6 @@ if _G then
         end)
         restoreAllWalkSpeeds()
         stopAutoE()
-        stopAutoTP()
         clearAllConnections()
         playerMotion = {}
         espObjects = {}
